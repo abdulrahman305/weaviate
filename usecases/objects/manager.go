@@ -1,18 +1,3 @@
-//                           _       _
-// __      _____  __ ___   ___  __ _| |_ ___
-// \ \ /\ / / _ \/ _` \ \ / / |/ _` | __/ _ \
-//  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
-//   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
-//
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
-//
-//  CONTACT: hello@weaviate.io
-//
-
-// package objects provides managers for all kind-related items, such as objects.
-// Manager provides methods for "regular" interaction, such as
-// add, get, delete, update, etc. Additionally BatchManager allows for
-// efficient batch-adding of object instances and references.
 package objects
 
 import (
@@ -31,21 +16,6 @@ import (
 	"github.com/weaviate/weaviate/entities/search"
 	"github.com/weaviate/weaviate/usecases/config"
 )
-
-// Manager manages kind changes at a use-case level, i.e. agnostic of
-// underlying databases or storage providers
-type Manager struct {
-	config            *config.WeaviateConfig
-	locks             locks
-	schemaManager     schemaManager
-	logger            logrus.FieldLogger
-	authorizer        authorizer
-	vectorRepo        VectorRepo
-	timeSource        timeSource
-	modulesProvider   ModulesProvider
-	autoSchemaManager *autoSchemaManager
-	metrics           objectsMetrics
-}
 
 type objectsMetrics interface {
 	BatchInc()
@@ -93,11 +63,9 @@ type VectorRepo interface {
 		repl *additional.ReplicationProperties) error
 	DeleteObject(ctx context.Context, className string, id strfmt.UUID,
 		repl *additional.ReplicationProperties, tenant string) error
-	// Object returns object of the specified class giving by its id
 	Object(ctx context.Context, class string, id strfmt.UUID, props search.SelectProperties,
 		additional additional.Properties, repl *additional.ReplicationProperties,
 		tenant string) (*search.Result, error)
-	// Exists returns true if an object of a giving class exists
 	Exists(ctx context.Context, class string, id strfmt.UUID,
 		repl *additional.ReplicationProperties, tenant string) (bool, error)
 	ObjectByID(ctx context.Context, id strfmt.UUID, props search.SelectProperties,
@@ -121,7 +89,19 @@ type ModulesProvider interface {
 	VectorizerName(className string) (string, error)
 }
 
-// NewManager creates a new manager
+type Manager struct {
+	config            *config.WeaviateConfig
+	locks             locks
+	schemaManager     schemaManager
+	logger            logrus.FieldLogger
+	authorizer        authorizer
+	vectorRepo        VectorRepo
+	timeSource        timeSource
+	modulesProvider   ModulesProvider
+	autoSchemaManager *autoSchemaManager
+	metrics           objectsMetrics
+}
+
 func NewManager(locks locks, schemaManager schemaManager,
 	config *config.WeaviateConfig, logger logrus.FieldLogger,
 	authorizer authorizer, vectorRepo VectorRepo,
@@ -154,4 +134,82 @@ type defaultTimeSource struct{}
 
 func (ts defaultTimeSource) Now() int64 {
 	return time.Now().UnixNano() / int64(time.Millisecond)
+}
+
+func (m *Manager) UpdateObject(ctx context.Context, principal *models.Principal,
+	class string, id strfmt.UUID, updates *models.Object,
+	repl *additional.ReplicationProperties,
+) (*models.Object, error) {
+	path := fmt.Sprintf("objects/%s/%s", class, id)
+	if class == "" {
+		path = fmt.Sprintf("objects/%s", id)
+	}
+	err := m.authorizer.Authorize(principal, "update", path)
+	if err != nil {
+		return nil, err
+	}
+
+	m.metrics.UpdateObjectInc()
+	defer m.metrics.UpdateObjectDec()
+
+	unlock, err := m.locks.LockSchema()
+	if err != nil {
+		return nil, NewErrInternal("could not acquire lock: %v", err)
+	}
+	defer unlock()
+
+	return m.updateObjectToConnectorAndSchema(ctx, principal, class, id, updates, repl)
+}
+
+func (m *Manager) updateObjectToConnectorAndSchema(ctx context.Context,
+	principal *models.Principal, className string, id strfmt.UUID, updates *models.Object,
+	repl *additional.ReplicationProperties,
+) (*models.Object, error) {
+	if id != updates.ID {
+		return nil, NewErrInvalidUserInput("invalid update: field 'id' is immutable")
+	}
+
+	obj, err := m.getObjectFromRepo(ctx, className, id, additional.Properties{}, repl, updates.Tenant)
+	if err != nil {
+		return nil, err
+	}
+
+	err = m.autoSchemaManager.autoSchema(ctx, principal, updates, false)
+	if err != nil {
+		return nil, NewErrInvalidUserInput("invalid object: %v", err)
+	}
+
+	m.logger.
+		WithField("object", "kinds_update_requested").
+		WithField("original", obj).
+		WithField("updated", updates).
+		WithField("id", id).
+		Debug("received update kind request")
+
+	prevObj := obj.Object()
+	err = m.validateObjectAndNormalizeNames(
+		ctx, principal, repl, updates, prevObj)
+	if err != nil {
+		return nil, NewErrInvalidUserInput("invalid object: %v", err)
+	}
+
+	updates.CreationTimeUnix = obj.Created
+	updates.LastUpdateTimeUnix = m.timeSource.Now()
+
+	class, err := m.schemaManager.GetClass(ctx, principal, className)
+	if err != nil {
+		return nil, err
+	}
+
+	err = m.modulesProvider.UpdateVector(ctx, updates, class, m.findObject, m.logger)
+	if err != nil {
+		return nil, NewErrInternal("update object: %v", err)
+	}
+
+	err = m.vectorRepo.PutObject(ctx, updates, updates.Vector, updates.Vectors, repl)
+	if err != nil {
+		return nil, fmt.Errorf("put object: %w", err)
+	}
+
+	return updates, nil
 }

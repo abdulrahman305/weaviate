@@ -1,14 +1,3 @@
-//                           _       _
-// __      _____  __ ___   ___  __ _| |_ ___
-// \ \ /\ / / _ \/ _` \ \ / / |/ _` | __/ _ \
-//  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
-//   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
-//
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
-//
-//  CONTACT: hello@weaviate.io
-//
-
 package rest
 
 import (
@@ -356,7 +345,7 @@ func (h *objectHandlers) deleteObject(params objects.ObjectsClassDeleteParams,
 func (h *objectHandlers) updateObject(params objects.ObjectsClassPutParams,
 	principal *models.Principal,
 ) middleware.Responder {
-	className := getClassName(params.Body)
+	className := params.ClassName
 	repl, err := getReplicationProperties(params.ConsistencyLevel, nil)
 	if err != nil {
 		h.metricRequestsTotal.logError(className, err)
