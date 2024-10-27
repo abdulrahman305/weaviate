@@ -164,3 +164,7 @@ Please reach out, and join our community:
 - [X (Twitter)](https://twitter.com/weaviate_io)
 
 To keep up to date with new releases, meetup news, and more, subscribe to our [newsletter](https://newsletter.weaviate.io/)
+
+## Automatic Merging
+
+Pull requests are automatically merged when all checks pass and the required approvals are received.
