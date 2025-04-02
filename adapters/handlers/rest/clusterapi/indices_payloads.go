@@ -19,13 +19,15 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"time"
 
 	"github.com/weaviate/weaviate/entities/dto"
-
+	"github.com/weaviate/weaviate/entities/models"
 	"github.com/weaviate/weaviate/usecases/byteops"
 
 	"github.com/go-openapi/strfmt"
 	"github.com/pkg/errors"
+
 	"github.com/weaviate/weaviate/entities/additional"
 	"github.com/weaviate/weaviate/entities/aggregation"
 	"github.com/weaviate/weaviate/entities/filters"
@@ -62,6 +64,25 @@ type indicesPayloads struct {
 	UpdateShardsStatusResults updateShardsStatusResultsPayload
 	ShardFiles                shardFilesPayload
 	IncreaseReplicationFactor increaseReplicationFactorPayload
+	ShardFilesResults         shardFilesResultsPayload
+}
+
+type shardFilesResultsPayload struct{}
+
+func (p shardFilesResultsPayload) MIME() string {
+	return "application/vnd.weaviate.shardfilesresults+json"
+}
+
+func (p shardFilesResultsPayload) SetContentTypeHeaderReq(r *http.Request) {
+	r.Header.Set("content-type", p.MIME())
+}
+
+func (p shardFilesResultsPayload) Unmarshal(in []byte) ([]string, error) {
+	var shardFiles []string
+	if err := json.Unmarshal(in, &shardFiles); err != nil {
+		return nil, fmt.Errorf("unmarshal shard files: %w", err)
+	}
+	return shardFiles, nil
 }
 
 type increaseReplicationFactorPayload struct{}
@@ -211,7 +232,7 @@ func (p objectListPayload) Unmarshal(in []byte) ([]*storobj.Object, error) {
 
 	for {
 		_, err := r.Read(reusableLengthBuf)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -289,7 +310,7 @@ func (p versionedObjectListPayload) Unmarshal(in []byte) ([]*objects.VObject, er
 
 	for {
 		_, err := r.Read(reusableLengthBuf)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -431,64 +452,101 @@ func (p vectorDistanceResultsPayload) CheckContentTypeHeader(r *http.Response) (
 	return ct, ct == p.MIME()
 }
 
+type searchParametersPayload struct {
+	SearchVector      []float32                    `json:"searchVector"`
+	TargetVector      string                       `json:"targetVector"`
+	Distance          float32                      `json:"distance"`
+	Limit             int                          `json:"limit"`
+	Filters           *filters.LocalFilter         `json:"filters"`
+	KeywordRanking    *searchparams.KeywordRanking `json:"keywordRanking"`
+	Sort              []filters.Sort               `json:"sort"`
+	Cursor            *filters.Cursor              `json:"cursor"`
+	GroupBy           *searchparams.GroupBy        `json:"groupBy"`
+	Additional        additional.Properties        `json:"additional"`
+	SearchVectors     []models.Vector              `json:"searchVectors"`
+	TargetVectors     []string                     `json:"TargetVectors"`
+	TargetCombination *dto.TargetCombination       `json:"targetCombination"`
+	Properties        []string                     `json:"properties"`
+}
+
+func (p *searchParametersPayload) UnmarshalJSON(data []byte) error {
+	type alias searchParametersPayload
+	aux := &struct {
+		SearchVectors json.RawMessage `json:"searchVectors"`
+		*alias
+	}{
+		alias: (*alias)(p),
+	}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	// SearchVectors are nil
+	if aux.SearchVectors == nil {
+		return nil
+	}
+
+	// Try unmarshaling as []float32
+	var vectors [][]float32
+	if err := json.Unmarshal(aux.SearchVectors, &vectors); err == nil {
+		if len(vectors) > 0 {
+			asVectors := make([]models.Vector, len(vectors))
+			for i := range vectors {
+				asVectors[i] = vectors[i]
+			}
+			p.SearchVectors = asVectors
+		}
+		return nil
+	}
+
+	// Try unmarshaling as [][]float32
+	var multiVectors [][][]float32
+	if err := json.Unmarshal(aux.SearchVectors, &multiVectors); err == nil {
+		if len(multiVectors) > 0 {
+			asVectors := make([]models.Vector, len(multiVectors))
+			for i := range multiVectors {
+				asVectors[i] = multiVectors[i]
+			}
+			p.SearchVectors = asVectors
+		}
+		return nil
+	}
+
+	return fmt.Errorf("searchVectors: cannot unmarshal into either [][]float32 or [][][]float32: %v", aux.SearchVectors)
+}
+
 type searchParamsPayload struct{}
 
-func (p searchParamsPayload) Marshal(vectors [][]float32, targetVectors []string, limit int,
+func (p searchParamsPayload) Marshal(vectors []models.Vector, targetVectors []string, distance float32, limit int,
 	filter *filters.LocalFilter, keywordRanking *searchparams.KeywordRanking,
 	sort []filters.Sort, cursor *filters.Cursor, groupBy *searchparams.GroupBy,
 	addP additional.Properties, targetCombination *dto.TargetCombination, properties []string,
 ) ([]byte, error) {
-	type params struct {
-		SearchVector      []float32                    `json:"searchVector"`
-		TargetVector      string                       `json:"targetVector"`
-		Limit             int                          `json:"limit"`
-		Filters           *filters.LocalFilter         `json:"filters"`
-		KeywordRanking    *searchparams.KeywordRanking `json:"keywordRanking"`
-		Sort              []filters.Sort               `json:"sort"`
-		Cursor            *filters.Cursor              `json:"cursor"`
-		GroupBy           *searchparams.GroupBy        `json:"groupBy"`
-		Additional        additional.Properties        `json:"additional"`
-		SearchVectors     [][]float32                  `json:"searchVectors"`
-		TargetVectors     []string                     `json:"targetVectors"`
-		TargetCombination *dto.TargetCombination       `json:"targetCombination"`
-		Properties        []string                     `json:"properties"`
-	}
 	var vector []float32
 	var targetVector string
 	// BC with pre 1.26
 	if len(vectors) == 1 {
-		vector = vectors[0]
-		targetVector = targetVectors[0]
+		// we only add a vector here only if it's []float32 vector to be backward compatible with pre v1.26 versions
+		if v, ok := vectors[0].([]float32); ok {
+			vector = v
+			targetVector = targetVectors[0]
+		}
 	}
 
-	par := params{vector, targetVector, limit, filter, keywordRanking, sort, cursor, groupBy, addP, vectors, targetVectors, targetCombination, properties}
+	par := searchParametersPayload{vector, targetVector, distance, limit, filter, keywordRanking, sort, cursor, groupBy, addP, vectors, targetVectors, targetCombination, properties}
 	return json.Marshal(par)
 }
 
-func (p searchParamsPayload) Unmarshal(in []byte) ([][]float32, []string, float32, int,
+func (p searchParamsPayload) Unmarshal(in []byte) ([]models.Vector, []string, float32, int,
 	*filters.LocalFilter, *searchparams.KeywordRanking, []filters.Sort,
 	*filters.Cursor, *searchparams.GroupBy, additional.Properties, *dto.TargetCombination, []string, error,
 ) {
-	type searchParametersPayload struct {
-		SearchVector      []float32                    `json:"searchVector"`
-		TargetVector      string                       `json:"targetVector"`
-		Distance          float32                      `json:"distance"`
-		Limit             int                          `json:"limit"`
-		Filters           *filters.LocalFilter         `json:"filters"`
-		KeywordRanking    *searchparams.KeywordRanking `json:"keywordRanking"`
-		Sort              []filters.Sort               `json:"sort"`
-		Cursor            *filters.Cursor              `json:"cursor"`
-		GroupBy           *searchparams.GroupBy        `json:"groupBy"`
-		Additional        additional.Properties        `json:"additional"`
-		SearchVectors     [][]float32                  `json:"searchVectors"`
-		TargetVectors     []string                     `json:"targetVectors"`
-		TargetCombination *dto.TargetCombination       `json:"targetCombination"`
-		Properties        []string                     `json:"properties"`
-	}
 	var par searchParametersPayload
 	err := json.Unmarshal(in, &par)
+
 	if len(par.SearchVector) > 0 {
-		par.SearchVectors = [][]float32{par.SearchVector}
+		par.SearchVectors = []models.Vector{par.SearchVector}
 		par.TargetVectors = []string{par.TargetVector}
 	}
 
@@ -726,24 +784,26 @@ func (p findUUIDsResultsPayload) CheckContentTypeHeader(r *http.Response) (strin
 
 type batchDeleteParamsPayload struct{}
 
-func (p batchDeleteParamsPayload) Marshal(uuids []strfmt.UUID, dryRun bool) ([]byte, error) {
+func (p batchDeleteParamsPayload) Marshal(uuids []strfmt.UUID, deletionTime time.Time, dryRun bool) ([]byte, error) {
 	type params struct {
-		UUIDs  []strfmt.UUID `json:"uuids"`
-		DryRun bool          `json:"dryRun"`
+		UUIDs                 []strfmt.UUID `json:"uuids"`
+		DeletionTimeUnixMilli int64         `json:"deletionTimeUnixMilli"`
+		DryRun                bool          `json:"dryRun"`
 	}
 
-	par := params{uuids, dryRun}
+	par := params{uuids, deletionTime.UnixMilli(), dryRun}
 	return json.Marshal(par)
 }
 
-func (p batchDeleteParamsPayload) Unmarshal(in []byte) ([]strfmt.UUID, bool, error) {
+func (p batchDeleteParamsPayload) Unmarshal(in []byte) ([]strfmt.UUID, time.Time, bool, error) {
 	type batchDeleteParametersPayload struct {
-		UUIDs  []strfmt.UUID `json:"uuids"`
-		DryRun bool          `json:"dryRun"`
+		UUIDs                 []strfmt.UUID `json:"uuids"`
+		DeletionTimeUnixMilli int64         `json:"deletionTimeUnixMilli"`
+		DryRun                bool          `json:"dryRun"`
 	}
 	var par batchDeleteParametersPayload
 	err := json.Unmarshal(in, &par)
-	return par.UUIDs, par.DryRun, err
+	return par.UUIDs, time.UnixMilli(par.DeletionTimeUnixMilli), par.DryRun, err
 }
 
 func (p batchDeleteParamsPayload) MIME() string {

@@ -12,6 +12,7 @@
 package hnsw
 
 import (
+	"context"
 	"flag"
 	"io"
 	"net/http"
@@ -24,12 +25,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sirupsen/logrus/hooks/test"
-
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/require"
-	"github.com/weaviate/weaviate/adapters/repos/db/vector/compressionhelpers"
 	"gopkg.in/yaml.v2"
+
+	"github.com/weaviate/weaviate/adapters/repos/db/vector/compressionhelpers"
 )
 
 var download = flag.Bool("download", false, "download datasets if not found locally")
@@ -55,6 +56,8 @@ var queries = map[string]string{
 }
 
 func BenchmarkHnswNeurips23(b *testing.B) {
+	ctx := context.Background()
+
 	runbooks := []string{
 		"datasets/neurips23/simple_runbook.yaml",
 		"datasets/neurips23/clustered_runbook.yaml",
@@ -106,7 +109,7 @@ Ex: go test -v -benchmem -bench ^BenchmarkHnswNeurips23$ -download`, step.Datase
 							switch op.Operation {
 							case "insert":
 								compressionhelpers.Concurrently(logger, uint64(op.End-op.Start), func(i uint64) {
-									err := index.Add(uint64(op.Start+int(i)), vectors[op.Start+int(i)])
+									err := index.Add(ctx, uint64(op.Start+int(i)), vectors[op.Start+int(i)])
 									require.NoError(b, err)
 								})
 							case "delete":
@@ -125,7 +128,7 @@ Ex: go test -v -benchmem -bench ^BenchmarkHnswNeurips23$ -download`, step.Datase
 								}
 
 								compressionhelpers.Concurrently(logger, uint64(len(queryVectors)), func(i uint64) {
-									_, _, err := index.SearchByVector(queryVectors[i], 0, nil)
+									_, _, err := index.SearchByVector(ctx, queryVectors[i], 0, nil)
 									require.NoError(b, err)
 								})
 							default:
@@ -251,7 +254,7 @@ func readBigAnnDataset(t testing.TB, file string, maxObjects int) [][]float32 {
 
 	for i := 0; i < n; i++ {
 		_, err = f.Read(vectorBytes)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)

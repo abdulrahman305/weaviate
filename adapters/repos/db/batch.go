@@ -14,10 +14,12 @@ package db
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-openapi/strfmt"
 	"github.com/pkg/errors"
 	"github.com/weaviate/weaviate/entities/additional"
+	"github.com/weaviate/weaviate/entities/dto"
 	"github.com/weaviate/weaviate/entities/schema"
 	"github.com/weaviate/weaviate/entities/storobj"
 	"github.com/weaviate/weaviate/usecases/memwatch"
@@ -46,7 +48,11 @@ func (db *DB) BatchPutObjects(ctx context.Context, objs objects.BatchObjects,
 			continue
 		}
 		queue := objectByClass[item.Object.Class]
-		queue.objects = append(queue.objects, storobj.FromObject(item.Object, item.Object.Vector, item.Object.Vectors))
+		vectors, multiVectors, err := dto.GetVectors(item.Object.Vectors)
+		if err != nil {
+			return nil, fmt.Errorf("cannot process batch: cannot get vectors: %w", err)
+		}
+		queue.objects = append(queue.objects, storobj.FromObject(item.Object, item.Object.Vector, vectors, multiVectors))
 		queue.originalIndex = append(queue.originalIndex, item.OriginalIndex)
 		objectByClass[item.Object.Class] = queue
 	}
@@ -68,7 +74,7 @@ func (db *DB) BatchPutObjects(ctx context.Context, objs objects.BatchObjects,
 							len(objs), origIdx)
 						break
 					}
-					objs[origIdx].Err = fmt.Errorf(msg)
+					objs[origIdx].Err = errors.New(msg)
 				}
 				continue
 			}
@@ -163,7 +169,7 @@ func (db *DB) AddBatchReferences(ctx context.Context, references objects.BatchRe
 }
 
 func (db *DB) BatchDeleteObjects(ctx context.Context, params objects.BatchDeleteParams,
-	repl *additional.ReplicationProperties, tenant string, schemaVersion uint64,
+	deletionTime time.Time, repl *additional.ReplicationProperties, tenant string, schemaVersion uint64,
 ) (objects.BatchDeleteResult, error) {
 	// get index for a given class
 	className := params.ClassName
@@ -200,16 +206,17 @@ func (db *DB) BatchDeleteObjects(ctx context.Context, params objects.BatchDelete
 	}
 
 	// delete the DocIDs in given shards
-	deletedObjects, err := idx.batchDeleteObjects(ctx, toDelete, params.DryRun, repl, schemaVersion)
+	deletedObjects, err := idx.batchDeleteObjects(ctx, toDelete, deletionTime, params.DryRun, repl, schemaVersion)
 	if err != nil {
 		return objects.BatchDeleteResult{}, errors.Wrapf(err, "cannot delete objects")
 	}
 
 	result := objects.BatchDeleteResult{
-		Matches: matches,
-		Limit:   db.config.QueryMaximumResults,
-		DryRun:  params.DryRun,
-		Objects: deletedObjects,
+		Matches:      matches,
+		Limit:        db.config.QueryMaximumResults,
+		DeletionTime: deletionTime,
+		DryRun:       params.DryRun,
+		Objects:      deletedObjects,
 	}
 	return result, nil
 }

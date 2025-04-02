@@ -28,6 +28,7 @@ import (
 	"github.com/weaviate/weaviate/entities/models"
 	"github.com/weaviate/weaviate/entities/schema"
 	enthnsw "github.com/weaviate/weaviate/entities/vectorindex/hnsw"
+	"github.com/weaviate/weaviate/usecases/config"
 	"github.com/weaviate/weaviate/usecases/memwatch"
 	"github.com/weaviate/weaviate/usecases/objects"
 )
@@ -115,8 +116,8 @@ func TestNullArrayClass(t *testing.T) {
 			}
 
 			if name == names[0] {
-				assert.Nil(t, repo.PutObject(context.Background(), arrayObjNil, []float32{1}, nil, nil, 0))
-				assert.Nil(t, repo.PutObject(context.Background(), arrayObjEmpty, []float32{1}, nil, nil, 0))
+				assert.Nil(t, repo.PutObject(context.Background(), arrayObjNil, []float32{1}, nil, nil, nil, 0))
+				assert.Nil(t, repo.PutObject(context.Background(), arrayObjEmpty, []float32{1}, nil, nil, nil, 0))
 
 			} else {
 				batch := make([]objects.BatchObject, 2)
@@ -169,6 +170,7 @@ func createClassWithEverything(IndexNullState bool, IndexPropertyLength bool) *m
 			},
 			IndexNullState:      IndexNullState,
 			IndexPropertyLength: IndexPropertyLength,
+			UsingBlockMaxWAND:   config.DefaultUsingBlockMaxWAND,
 		},
 		Class: "EverythingClass",
 		Properties: []*models.Property{

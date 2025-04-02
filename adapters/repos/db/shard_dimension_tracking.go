@@ -22,6 +22,7 @@ import (
 
 	"github.com/weaviate/weaviate/adapters/repos/db/helpers"
 	"github.com/weaviate/weaviate/adapters/repos/db/lsmkv"
+	"github.com/weaviate/weaviate/adapters/repos/db/vector/common"
 	schemaConfig "github.com/weaviate/weaviate/entities/schema/config"
 	hnswent "github.com/weaviate/weaviate/entities/vectorindex/hnsw"
 	"github.com/weaviate/weaviate/usecases/monitoring"
@@ -35,85 +36,51 @@ const (
 	DimensionCategoryBQ
 )
 
-func (s *Shard) Dimensions(ctx context.Context) int {
-	keyLen := 4
-	return s.calcDimensions(ctx, func(k []byte, v []lsmkv.MapPair) int {
-		// consider only keys of len 4, skipping ones prefixed with vector name
-		if len(k) == keyLen {
-			dimLength := binary.LittleEndian.Uint32(k)
-			return int(dimLength) * len(v)
-		}
-		return 0
+func (s *Shard) Dimensions(ctx context.Context, targetVector string) int {
+	sum, _ := s.calcTargetVectorDimensions(ctx, targetVector, func(dimLength int, v []lsmkv.MapPair) (int, int) {
+		return dimLength * len(v), dimLength
 	})
+	return sum
 }
 
-func (s *Shard) DimensionsForVec(ctx context.Context, vecName string) int {
-	nameLen := len(vecName)
-	keyLen := nameLen + 4
-	return s.calcDimensions(ctx, func(k []byte, v []lsmkv.MapPair) int {
-		// consider only keys of len vecName + 4, prefixed with vecName
-		if len(k) == keyLen && strings.HasPrefix(string(k), vecName) {
-			dimLength := binary.LittleEndian.Uint32(k[nameLen:])
-			return int(dimLength) * len(v)
-		}
-		return 0
+func (s *Shard) QuantizedDimensions(ctx context.Context, targetVector string, segments int) int {
+	sum, dimensions := s.calcTargetVectorDimensions(ctx, targetVector, func(dimLength int, v []lsmkv.MapPair) (int, int) {
+		return len(v), dimLength
 	})
+
+	return sum * correctEmptySegments(segments, dimensions)
 }
 
-func (s *Shard) QuantizedDimensions(ctx context.Context, segments int) int {
-	// Exit early if segments is 0 (unset), in this case PQ will use the same number of dimensions
-	// as the segment size
-	if segments <= 0 {
-		return s.Dimensions(ctx)
-	}
-
-	keyLen := 4
-	return s.calcDimensions(ctx, func(k []byte, v []lsmkv.MapPair) int {
-		// consider only keys of len 4, skipping ones prefixed with vector name
-		if len(k) == keyLen {
-			if dimLength := binary.LittleEndian.Uint32(k); dimLength > 0 {
-				return len(v)
-			}
-		}
-		return 0
-	}) * segments
-}
-
-func (s *Shard) QuantizedDimensionsForVec(ctx context.Context, segments int, vecName string) int {
-	// Exit early if segments is 0 (unset), in this case PQ will use the same number of dimensions
-	// as the segment size
-	if segments <= 0 {
-		return s.DimensionsForVec(ctx, vecName)
-	}
-
-	nameLen := len(vecName)
-	keyLen := nameLen + 4
-	return s.calcDimensions(ctx, func(k []byte, v []lsmkv.MapPair) int {
-		// consider only keys of len vecName + 4, prefixed with vecName
-		if len(k) == keyLen && strings.HasPrefix(string(k), vecName) {
-			if dimLength := binary.LittleEndian.Uint32(k[nameLen:]); dimLength > 0 {
-				return len(v)
-			}
-		}
-		return 0
-	}) * segments
-}
-
-func (s *Shard) calcDimensions(ctx context.Context, calcEntry func(k []byte, v []lsmkv.MapPair) int) int {
+func (s *Shard) calcTargetVectorDimensions(ctx context.Context, targetVector string, calcEntry func(dimLen int, v []lsmkv.MapPair) (int, int)) (sum int, dimensions int) {
 	b := s.store.Bucket(helpers.DimensionsBucketLSM)
 	if b == nil {
-		return 0
+		return 0, 0
 	}
 
 	c := b.MapCursor()
 	defer c.Close()
 
-	sum := 0
+	var (
+		nameLen        = len(targetVector)
+		expectedKeyLen = 4 + nameLen
+	)
+
 	for k, v := c.First(ctx); k != nil; k, v = c.Next(ctx) {
-		sum += calcEntry(k, v)
+		// for named vectors we have to additionally check if the key is prefixed with the vector name
+		keyMatches := len(k) == expectedKeyLen && (nameLen == 4 || strings.HasPrefix(string(k), targetVector))
+		if !keyMatches {
+			continue
+		}
+
+		dimLength := int(binary.LittleEndian.Uint32(k[nameLen:]))
+		size, dim := calcEntry(dimLength, v)
+		if dimensions == 0 && dim > 0 {
+			dimensions = dim
+		}
+		sum += size
 	}
 
-	return sum
+	return sum, dimensions
 }
 
 func (s *Shard) initDimensionTracking() {
@@ -166,89 +133,45 @@ func (s *Shard) initDimensionTracking() {
 
 func (s *Shard) publishDimensionMetrics(ctx context.Context) {
 	if s.promMetrics != nil {
-		className := s.index.Config.ClassName.String()
+		var (
+			className = s.index.Config.ClassName.String()
+			configs   = s.index.GetVectorIndexConfigs()
 
-		if !s.hasTargetVectors() {
-			// send stats for legacy vector only
-			switch category, segments := getDimensionCategory(s.index.vectorIndexUserConfig); category {
-			case DimensionCategoryPQ:
-				count := s.QuantizedDimensions(ctx, segments)
-				sendVectorSegmentsMetric(s.promMetrics, className, s.name, count)
-				sendVectorDimensionsMetric(s.promMetrics, className, s.name, 0)
-			case DimensionCategoryBQ:
-				count := s.Dimensions(ctx) / 8 // BQ has a flat 8x reduction in the dimensions metric
-				sendVectorSegmentsMetric(s.promMetrics, className, s.name, count)
-				sendVectorDimensionsMetric(s.promMetrics, className, s.name, 0)
-			default:
-				count := s.Dimensions(ctx)
-				sendVectorDimensionsMetric(s.promMetrics, className, s.name, count)
-			}
-			return
+			sumSegments   = 0
+			sumDimensions = 0
+		)
+
+		for targetVector, config := range configs {
+			dimensions, segments := s.calcDimensionsAndSegments(ctx, config, targetVector)
+			sumDimensions += dimensions
+			sumSegments += segments
 		}
 
-		sumSegments := 0
-		sumDimensions := 0
-
-		// send stats for each target vector
-		for vecName, vecCfg := range s.index.vectorIndexUserConfigs {
-			switch category, segments := getDimensionCategory(vecCfg); category {
-			case DimensionCategoryPQ:
-				count := s.QuantizedDimensionsForVec(ctx, segments, vecName)
-				sumSegments += count
-				sendVectorSegmentsForVecMetric(s.promMetrics, className, s.name, count, vecName)
-				sendVectorDimensionsForVecMetric(s.promMetrics, className, s.name, 0, vecName)
-			case DimensionCategoryBQ:
-				count := s.DimensionsForVec(ctx, vecName) / 8 // BQ has a flat 8x reduction in the dimensions metric
-				sumSegments += count
-				sendVectorSegmentsForVecMetric(s.promMetrics, className, s.name, count, vecName)
-				sendVectorDimensionsForVecMetric(s.promMetrics, className, s.name, 0, vecName)
-			default:
-				count := s.DimensionsForVec(ctx, vecName)
-				sumDimensions += count
-				sendVectorDimensionsForVecMetric(s.promMetrics, className, s.name, count, vecName)
-			}
-		}
-
-		// send sum stats for all target vectors
 		sendVectorSegmentsMetric(s.promMetrics, className, s.name, sumSegments)
 		sendVectorDimensionsMetric(s.promMetrics, className, s.name, sumDimensions)
 	}
 }
 
-func (s *Shard) clearDimensionMetrics() {
-	clearDimensionMetrics(s.promMetrics, s.index.Config.ClassName.String(),
-		s.name, s.index.vectorIndexUserConfig, s.index.vectorIndexUserConfigs)
+func (s *Shard) calcDimensionsAndSegments(ctx context.Context, vecCfg schemaConfig.VectorIndexConfig, vecName string) (dims int, segs int) {
+	switch category, segments := getDimensionCategory(vecCfg); category {
+	case DimensionCategoryPQ:
+		count := s.QuantizedDimensions(ctx, vecName, segments)
+		return 0, count
+	case DimensionCategoryBQ:
+		count := s.Dimensions(ctx, vecName) / 8 // BQ has a flat 8x reduction in the dimensions metric
+		return 0, count
+	default:
+		count := s.Dimensions(ctx, vecName)
+		return count, 0
+	}
 }
 
-func clearDimensionMetrics(promMetrics *monitoring.PrometheusMetrics,
-	className, shardName string,
-	cfg schemaConfig.VectorIndexConfig, targetCfgs map[string]schemaConfig.VectorIndexConfig,
-) {
+func (s *Shard) clearDimensionMetrics() {
+	clearDimensionMetrics(s.promMetrics, s.index.Config.ClassName.String(), s.name)
+}
+
+func clearDimensionMetrics(promMetrics *monitoring.PrometheusMetrics, className, shardName string) {
 	if promMetrics != nil {
-		if !hasTargetVectors(cfg, targetCfgs) {
-			// send stats for legacy vector only
-			switch category, _ := getDimensionCategory(cfg); category {
-			case DimensionCategoryPQ, DimensionCategoryBQ:
-				sendVectorDimensionsMetric(promMetrics, className, shardName, 0)
-				sendVectorSegmentsMetric(promMetrics, className, shardName, 0)
-			default:
-				sendVectorDimensionsMetric(promMetrics, className, shardName, 0)
-			}
-			return
-		}
-
-		// send stats for each target vector
-		for vecName, vecCfg := range targetCfgs {
-			switch category, _ := getDimensionCategory(vecCfg); category {
-			case DimensionCategoryPQ, DimensionCategoryBQ:
-				sendVectorDimensionsForVecMetric(promMetrics, className, shardName, 0, vecName)
-				sendVectorSegmentsForVecMetric(promMetrics, className, shardName, 0, vecName)
-			default:
-				sendVectorDimensionsForVecMetric(promMetrics, className, shardName, 0, vecName)
-			}
-		}
-
-		// send sum stats for all target vectors
 		sendVectorDimensionsMetric(promMetrics, className, shardName, 0)
 		sendVectorSegmentsMetric(promMetrics, className, shardName, 0)
 	}
@@ -259,16 +182,6 @@ func sendVectorSegmentsMetric(promMetrics *monitoring.PrometheusMetrics,
 ) {
 	metric, err := promMetrics.VectorSegmentsSum.
 		GetMetricWithLabelValues(className, shardName)
-	if err == nil {
-		metric.Set(float64(count))
-	}
-}
-
-func sendVectorSegmentsForVecMetric(promMetrics *monitoring.PrometheusMetrics,
-	className, shardName string, count int, vecName string,
-) {
-	metric, err := promMetrics.VectorSegmentsSumByVector.
-		GetMetricWithLabelValues(className, shardName, vecName)
 	if err == nil {
 		metric.Set(float64(count))
 	}
@@ -292,24 +205,6 @@ func sendVectorDimensionsMetric(promMetrics *monitoring.PrometheusMetrics,
 	}
 }
 
-func sendVectorDimensionsForVecMetric(promMetrics *monitoring.PrometheusMetrics,
-	className, shardName string, count int, vecName string,
-) {
-	// Important: Never group classes/shards for this metric. We need the
-	// granularity here as this tracks an absolute value per shard that changes
-	// independently over time.
-	//
-	// If we need to reduce metrics further, an alternative could be to not
-	// make dimension tracking shard-centric, but rather make it node-centric.
-	// Then have a single metric that aggregates all dimensions first, then
-	// observes only the sum
-	metric, err := promMetrics.VectorDimensionsSumByVector.
-		GetMetricWithLabelValues(className, shardName, vecName)
-	if err == nil {
-		metric.Set(float64(count))
-	}
-}
-
 func getDimensionCategory(cfg schemaConfig.VectorIndexConfig) (DimensionCategory, int) {
 	// We have special dimension tracking for BQ and PQ to represent reduced costs
 	// these are published under the separate vector_segments_dimensions metric
@@ -322,4 +217,13 @@ func getDimensionCategory(cfg schemaConfig.VectorIndexConfig) (DimensionCategory
 		}
 	}
 	return DimensionCategoryStandard, 0
+}
+
+func correctEmptySegments(segments int, dimensions int) int {
+	// If segments is 0 (unset), in this case PQ will calculate the number of segments
+	// based on the number of dimensions
+	if segments > 0 {
+		return segments
+	}
+	return common.CalculateOptimalSegments(dimensions)
 }

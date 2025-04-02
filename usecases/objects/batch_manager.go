@@ -13,6 +13,7 @@ package objects
 
 import (
 	"context"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/weaviate/weaviate/entities/additional"
@@ -25,11 +26,11 @@ import (
 // agnostic of underlying databases or storage providers
 type BatchManager struct {
 	config            *config.WeaviateConfig
-	locks             locks
 	schemaManager     schemaManager
 	logger            logrus.FieldLogger
 	authorizer        authorization.Authorizer
 	vectorRepo        BatchVectorRepo
+	timeSource        timeSource
 	modulesProvider   ModulesProvider
 	autoSchemaManager *autoSchemaManager
 	metrics           *Metrics
@@ -43,7 +44,7 @@ type BatchVectorRepo interface {
 type batchRepoNew interface {
 	BatchPutObjects(ctx context.Context, objects BatchObjects,
 		repl *additional.ReplicationProperties, schemaVersion uint64) (BatchObjects, error)
-	BatchDeleteObjects(ctx context.Context, params BatchDeleteParams,
+	BatchDeleteObjects(ctx context.Context, params BatchDeleteParams, deletionTime time.Time,
 		repl *additional.ReplicationProperties, tenant string, schemaVersion uint64) (BatchDeleteResult, error)
 	AddBatchReferences(ctx context.Context, references BatchReferences,
 		repl *additional.ReplicationProperties, schemaVersion uint64) (BatchReferences, error)
@@ -51,19 +52,19 @@ type batchRepoNew interface {
 
 // NewBatchManager creates a new manager
 func NewBatchManager(vectorRepo BatchVectorRepo, modulesProvider ModulesProvider,
-	locks locks, schemaManager schemaManager, config *config.WeaviateConfig,
+	schemaManager schemaManager, config *config.WeaviateConfig,
 	logger logrus.FieldLogger, authorizer authorization.Authorizer,
 	prom *monitoring.PrometheusMetrics,
 ) *BatchManager {
 	return &BatchManager{
 		config:            config,
-		locks:             locks,
 		schemaManager:     schemaManager,
 		logger:            logger,
 		vectorRepo:        vectorRepo,
+		timeSource:        defaultTimeSource{},
 		modulesProvider:   modulesProvider,
 		authorizer:        authorizer,
-		autoSchemaManager: newAutoSchemaManager(schemaManager, vectorRepo, config, logger),
+		autoSchemaManager: newAutoSchemaManager(schemaManager, vectorRepo, config, authorizer, logger),
 		metrics:           NewMetrics(prom),
 	}
 }

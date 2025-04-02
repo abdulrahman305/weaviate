@@ -22,13 +22,21 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/weaviate/weaviate/cluster/dynusers"
+	"github.com/weaviate/weaviate/usecases/auth/authentication/apikey"
+	"github.com/weaviate/weaviate/usecases/auth/authorization"
+
+	"github.com/prometheus/client_golang/prometheus"
 	enterrors "github.com/weaviate/weaviate/entities/errors"
-	"github.com/weaviate/weaviate/exp/metadata"
+	"github.com/weaviate/weaviate/usecases/cluster"
 
 	"github.com/hashicorp/raft"
 	raftbolt "github.com/hashicorp/raft-boltdb/v2"
 	"github.com/sirupsen/logrus"
 	"github.com/weaviate/weaviate/cluster/log"
+	rbacRaft "github.com/weaviate/weaviate/cluster/rbac"
+	"github.com/weaviate/weaviate/cluster/replication"
+	replicationTypes "github.com/weaviate/weaviate/cluster/replication/types"
 	"github.com/weaviate/weaviate/cluster/resolver"
 	"github.com/weaviate/weaviate/cluster/schema"
 	"github.com/weaviate/weaviate/cluster/types"
@@ -105,9 +113,10 @@ type Config struct {
 
 	// ConsistencyWaitTimeout is the duration we will wait for a schema version to land on that node
 	ConsistencyWaitTimeout time.Duration
-	NodeToAddressResolver  resolver.NodeToAddress
-	Logger                 *logrus.Logger
-	Voter                  bool
+	// NodeSelector is the memberlist interface to RAFT
+	NodeSelector cluster.NodeSelector
+	Logger       *logrus.Logger
+	Voter        bool
 
 	// MetadataOnlyVoters configures the voters to store metadata exclusively, without storing any other data
 	MetadataOnlyVoters bool
@@ -135,13 +144,13 @@ type Config struct {
 	// WARNING: This should be run on *actual* one node cluster only.
 	ForceOneNodeRecovery bool
 
-	EnableFQDNResolver bool
-	FQDNResolverTLD    string
+	// 	AuthzController to manage RBAC commands and apply it to casbin
+	AuthzController authorization.Controller
 
-	// ClassTenantDataEvents can have events published onto it when tenant changes like
-	// being frozen happen, with the goal of being able to alert the metadata nodes. This
-	// channel will be nil if the metadata server is not enabled.
-	ClassTenantDataEvents chan metadata.ClassTenant
+	DynamicUserController *apikey.DBUser
+
+	// ReplicaCopier copies shard replicas between nodes
+	ReplicaCopier replicationTypes.ReplicaCopier
 }
 
 // Store is the implementation of RAFT on this local node. It will handle the local schema and RAFT operations (startup,
@@ -184,45 +193,40 @@ type Store struct {
 	// schemaManager is responsible for applying changes committed by RAFT to the schema representation & querying the
 	// schema
 	schemaManager *schema.SchemaManager
+
+	// authZManager is responsible for applying/querying changes committed by RAFT to the rbac representation
+	authZManager *rbacRaft.Manager
+
+	// authZManager is responsible for applying/querying changes committed by RAFT to the rbac representation
+	dynUserManager *dynusers.Manager
+
+	// replicationManager is responsible for applying/querying the replication FSM used to handle replication operations
+	replicationManager *replication.Manager
+
 	// lastAppliedIndexToDB represents the index of the last applied command when the store is opened.
 	lastAppliedIndexToDB atomic.Uint64
 	// / lastAppliedIndex index of latest update to the store
 	lastAppliedIndex atomic.Uint64
 }
 
-func NewFSM(cfg Config) Store {
-	// We have different resolver in raft so that depending on the environment we can resolve a node-id to an IP using
-	// different methods.
-	var raftResolver types.RaftResolver
-	raftResolver = resolver.NewRaft(resolver.RaftConfig{
-		NodeToAddress:     cfg.NodeToAddressResolver,
-		RaftPort:          cfg.RaftPort,
-		IsLocalHost:       cfg.IsLocalHost,
-		NodeNameToPortMap: cfg.NodeNameToPortMap,
-	})
-	if cfg.EnableFQDNResolver {
-		raftResolver = resolver.NewFQDN(resolver.FQDNConfig{
-			TLD:               cfg.FQDNResolverTLD,
-			RaftPort:          cfg.RaftPort,
-			IsLocalHost:       cfg.IsLocalHost,
-			NodeNameToPortMap: cfg.NodeNameToPortMap,
-		})
-	}
-	var schemaManager *schema.SchemaManager
-	if cfg.ClassTenantDataEvents != nil {
-		schemaManager = schema.NewSchemaManagerWithTenantEvents(cfg.NodeID, cfg.DB, cfg.Parser,
-			cfg.ClassTenantDataEvents, cfg.Logger)
-	} else {
-		schemaManager = schema.NewSchemaManager(cfg.NodeID, cfg.DB, cfg.Parser, cfg.Logger)
-	}
+func NewFSM(cfg Config, reg prometheus.Registerer) Store {
+	schemaManager := schema.NewSchemaManager(cfg.NodeID, cfg.DB, cfg.Parser, reg, cfg.Logger)
 
 	return Store{
-		cfg:           cfg,
-		log:           cfg.Logger,
-		candidates:    make(map[string]string, cfg.BootstrapExpect),
-		applyTimeout:  time.Second * 20,
-		raftResolver:  raftResolver,
-		schemaManager: schemaManager,
+		cfg:          cfg,
+		log:          cfg.Logger,
+		candidates:   make(map[string]string, cfg.BootstrapExpect),
+		applyTimeout: time.Second * 20,
+		raftResolver: resolver.NewRaft(resolver.RaftConfig{
+			ClusterStateReader: cfg.NodeSelector,
+			RaftPort:           cfg.RaftPort,
+			IsLocalHost:        cfg.IsLocalHost,
+			NodeNameToPortMap:  cfg.NodeNameToPortMap,
+		}),
+		schemaManager:      schemaManager,
+		authZManager:       rbacRaft.NewManager(cfg.AuthzController, cfg.Logger),
+		dynUserManager:     dynusers.NewManager(cfg.DynamicUserController, cfg.Logger),
+		replicationManager: replication.NewManager(cfg.Logger, schemaManager.NewSchemaReader(), cfg.ReplicaCopier),
 	}
 }
 
@@ -374,12 +378,12 @@ func (st *Store) onLeaderFound(timeout time.Duration) {
 			// serialize snapshot
 			b, c, err := schema.LegacySnapshot(st.cfg.NodeID, legacySchema)
 			if err != nil {
-				return fmt.Errorf("create snapshot: %s" + err.Error())
+				return fmt.Errorf("create snapshot: %w", err)
 			}
 			b.Index = st.raft.LastIndex()
 			b.Term = 1
 			if err := st.raft.Restore(b, c, timeout); err != nil {
-				return fmt.Errorf("raft restore: %w" + err.Error())
+				return fmt.Errorf("raft restore: %w", err)
 			}
 			return nil
 		}
@@ -677,6 +681,10 @@ func (st *Store) reloadDBFromSchema() {
 		st.log.WithField("error", err).Warn("can't detect the last applied command, setting the lastLogApplied to 0")
 	}
 	st.lastAppliedIndexToDB.Store(max(lastSnapshotIndex(st.snapshotStore), lastLogApplied))
+}
+
+func (st *Store) FSMHasCaughtUp() bool {
+	return st.lastAppliedIndex.Load() >= st.lastAppliedIndexToDB.Load()
 }
 
 type Response struct {

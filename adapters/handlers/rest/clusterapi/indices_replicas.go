@@ -21,8 +21,11 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/go-openapi/strfmt"
+
+	"github.com/weaviate/weaviate/cluster/router/types"
 	enterrors "github.com/weaviate/weaviate/entities/errors"
 	"github.com/weaviate/weaviate/entities/storobj"
 	"github.com/weaviate/weaviate/usecases/objects"
@@ -40,24 +43,24 @@ type replicator interface {
 	ReplicateUpdate(ctx context.Context, indexName, shardName,
 		requestID string, mergeDoc *objects.MergeDocument, schemaVersion uint64) replica.SimpleResponse
 	ReplicateDeletion(ctx context.Context, indexName, shardName,
-		requestID string, uuid strfmt.UUID, schemaVersion uint64) replica.SimpleResponse
+		requestID string, uuid strfmt.UUID, deletionTime time.Time, schemaVersion uint64) replica.SimpleResponse
 	ReplicateDeletions(ctx context.Context, indexName, shardName,
-		requestID string, uuids []strfmt.UUID, dryRun bool, schemaVersion uint64) replica.SimpleResponse
+		requestID string, uuids []strfmt.UUID, deletionTime time.Time, dryRun bool, schemaVersion uint64) replica.SimpleResponse
 	ReplicateReferences(ctx context.Context, indexName, shardName,
 		requestID string, refs []objects.BatchReference, schemaVersion uint64) replica.SimpleResponse
 	CommitReplication(indexName, shardName, requestID string) interface{}
 	AbortReplication(indexName, shardName, requestID string) interface{}
 	OverwriteObjects(ctx context.Context, index, shard string,
-		vobjects []*objects.VObject) ([]replica.RepairResponse, error)
+		vobjects []*objects.VObject) ([]types.RepairResponse, error)
 	// Read endpoints
 	FetchObject(ctx context.Context, indexName,
 		shardName string, id strfmt.UUID) (objects.Replica, error)
 	FetchObjects(ctx context.Context, class,
 		shardName string, ids []strfmt.UUID) ([]objects.Replica, error)
 	DigestObjects(ctx context.Context, class, shardName string,
-		ids []strfmt.UUID) (result []replica.RepairResponse, err error)
-	DigestObjectsInTokenRange(ctx context.Context, class, shardName string,
-		initialToken, finalToken uint64, limit int) (result []replica.RepairResponse, lastTokenRead uint64, err error)
+		ids []strfmt.UUID) (result []types.RepairResponse, err error)
+	DigestObjectsInRange(ctx context.Context, class, shardName string,
+		initialUUID, finalUUID strfmt.UUID, limit int) (result []types.RepairResponse, err error)
 	HashTreeLevel(ctx context.Context, index, shard string,
 		level int, discriminant *hashtree.Bitset) (digests []hashtree.Digest, err error)
 }
@@ -73,18 +76,18 @@ type replicatedIndices struct {
 	auth   auth
 	// maintenanceModeEnabled is an experimental feature to allow the system to be
 	// put into a maintenance mode where all replicatedIndices requests just return a 418
-	maintenanceModeEnabled bool
+	maintenanceModeEnabled func() bool
 }
 
 var (
 	regxObject = regexp.MustCompile(`\/replicas\/indices\/(` + cl + `)` +
-		`\/shards\/(` + sh + `)\/objects\/(` + ob + `)`)
+		`\/shards\/(` + sh + `)\/objects\/(` + ob + `)(\/[0-9]{1,64})?`)
 	regxOverwriteObjects = regexp.MustCompile(`\/indices\/(` + cl + `)` +
 		`\/shards\/(` + sh + `)\/objects/_overwrite`)
 	regxObjectsDigest = regexp.MustCompile(`\/indices\/(` + cl + `)` +
 		`\/shards\/(` + sh + `)\/objects/_digest`)
-	regexObjectsDigestsInTokenRange = regexp.MustCompile(`\/indices\/(` + cl + `)` +
-		`\/shards\/(` + sh + `)\/objects/digestsInTokenRange`)
+	regexObjectsDigestsInRange = regexp.MustCompile(`\/indices\/(` + cl + `)` +
+		`\/shards\/(` + sh + `)\/objects/digestsInRange`)
 	regxHashTreeLevel = regexp.MustCompile(`\/indices\/(` + cl + `)` +
 		`\/shards\/(` + sh + `)\/objects\/hashtree\/(` + l + `)`)
 	regxObjects = regexp.MustCompile(`\/replicas\/indices\/(` + cl + `)` +
@@ -97,7 +100,7 @@ var (
 		`\/shards\/(` + sh + `):(commit|abort)`)
 )
 
-func NewReplicatedIndices(shards replicator, scaler localScaler, auth auth, maintenanceModeEnabled bool) *replicatedIndices {
+func NewReplicatedIndices(shards replicator, scaler localScaler, auth auth, maintenanceModeEnabled func() bool) *replicatedIndices {
 	return &replicatedIndices{
 		shards:                 shards,
 		scaler:                 scaler,
@@ -113,7 +116,7 @@ func (i *replicatedIndices) Indices() http.Handler {
 func (i *replicatedIndices) indicesHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if i.maintenanceModeEnabled {
+		if i.maintenanceModeEnabled() {
 			http.Error(w, "418 Maintenance mode", http.StatusTeapot)
 			return
 		}
@@ -128,9 +131,9 @@ func (i *replicatedIndices) indicesHandler() http.HandlerFunc {
 
 			http.Error(w, "405 Method not Allowed", http.StatusMethodNotAllowed)
 			return
-		case regexObjectsDigestsInTokenRange.MatchString(path):
+		case regexObjectsDigestsInRange.MatchString(path):
 			if r.Method == http.MethodPost {
-				i.getObjectsDigestsInTokenRange().ServeHTTP(w, r)
+				i.getObjectsDigestsInRange().ServeHTTP(w, r)
 				return
 			}
 
@@ -266,7 +269,6 @@ func (i *replicatedIndices) executeCommitPhase() http.Handler {
 func (i *replicatedIndices) increaseReplicationFactor() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		args := regxIncreaseRepFactor.FindStringSubmatch(r.URL.Path)
-		fmt.Printf("path: %v, args: %+v", r.URL.Path, args)
 		if len(args) != 2 {
 			http.Error(w, "invalid URI", http.StatusBadRequest)
 			return
@@ -433,9 +435,9 @@ func (i *replicatedIndices) getObjectsDigest() http.Handler {
 	})
 }
 
-func (i *replicatedIndices) getObjectsDigestsInTokenRange() http.Handler {
+func (i *replicatedIndices) getObjectsDigestsInRange() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		args := regexObjectsDigestsInTokenRange.FindStringSubmatch(r.URL.Path)
+		args := regexObjectsDigestsInRange.FindStringSubmatch(r.URL.Path)
 		if len(args) != 3 {
 			http.Error(w, "invalid URI", http.StatusBadRequest)
 			return
@@ -450,24 +452,23 @@ func (i *replicatedIndices) getObjectsDigestsInTokenRange() http.Handler {
 			return
 		}
 
-		var tokenRangeReq replica.DigestObjectsInTokenRangeReq
-		if err := json.Unmarshal(reqPayload, &tokenRangeReq); err != nil {
+		var rangeReq replica.DigestObjectsInRangeReq
+		if err := json.Unmarshal(reqPayload, &rangeReq); err != nil {
 			http.Error(w, "unmarshal digest objects in token range params from json: "+err.Error(),
 				http.StatusBadRequest)
 			return
 		}
 
-		digests, lastTokenRead, err := i.shards.DigestObjectsInTokenRange(r.Context(),
-			index, shard, tokenRangeReq.InitialToken, tokenRangeReq.FinalToken, tokenRangeReq.Limit)
+		digests, err := i.shards.DigestObjectsInRange(r.Context(),
+			index, shard, rangeReq.InitialUUID, rangeReq.FinalUUID, rangeReq.Limit)
 		if err != nil {
 			http.Error(w, "digest objects in range: "+err.Error(),
 				http.StatusInternalServerError)
 			return
 		}
 
-		resBytes, err := json.Marshal(replica.DigestObjectsInTokenRangeResp{
-			Digests:       digests,
-			LastTokenRead: lastTokenRead,
+		resBytes, err := json.Marshal(replica.DigestObjectsInRangeResp{
+			Digests: digests,
 		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -569,7 +570,7 @@ func (i *replicatedIndices) putOverwriteObjects() http.Handler {
 func (i *replicatedIndices) deleteObject() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		args := regxObject.FindStringSubmatch(r.URL.Path)
-		if len(args) != 4 {
+		if len(args) != 5 {
 			http.Error(w, "invalid URI", http.StatusBadRequest)
 			return
 		}
@@ -582,6 +583,16 @@ func (i *replicatedIndices) deleteObject() http.Handler {
 
 		index, shard, id := args[1], args[2], args[3]
 
+		var deletionTime time.Time
+
+		if args[4] != "" {
+			deletionTimeUnixMilli, err := strconv.ParseInt(args[4][1:], 10, 64)
+			if err != nil {
+				http.Error(w, "invalid URI", http.StatusBadRequest)
+			}
+			deletionTime = time.UnixMilli(deletionTimeUnixMilli)
+		}
+
 		defer r.Body.Close()
 
 		schemaVersion, err := extractSchemaVersionFromUrlQuery(r.URL.Query())
@@ -589,7 +600,7 @@ func (i *replicatedIndices) deleteObject() http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		resp := i.shards.ReplicateDeletion(r.Context(), index, shard, requestID, strfmt.UUID(id), schemaVersion)
+		resp := i.shards.ReplicateDeletion(r.Context(), index, shard, requestID, strfmt.UUID(id), deletionTime, schemaVersion)
 		if localIndexNotReady(resp) {
 			http.Error(w, resp.FirstError().Error(), http.StatusServiceUnavailable)
 			return
@@ -628,7 +639,7 @@ func (i *replicatedIndices) deleteObjects() http.Handler {
 		}
 		defer r.Body.Close()
 
-		uuids, dryRun, err := IndicesPayloads.BatchDeleteParams.Unmarshal(bodyBytes)
+		uuids, deletionTimeUnix, dryRun, err := IndicesPayloads.BatchDeleteParams.Unmarshal(bodyBytes)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -640,7 +651,7 @@ func (i *replicatedIndices) deleteObjects() http.Handler {
 			return
 		}
 
-		resp := i.shards.ReplicateDeletions(r.Context(), index, shard, requestID, uuids, dryRun, schemaVersion)
+		resp := i.shards.ReplicateDeletions(r.Context(), index, shard, requestID, uuids, deletionTimeUnix, dryRun, schemaVersion)
 		if localIndexNotReady(resp) {
 			http.Error(w, resp.FirstError().Error(), http.StatusServiceUnavailable)
 			return
@@ -721,7 +732,7 @@ func (i *replicatedIndices) postObjectBatch(w http.ResponseWriter, r *http.Reque
 func (i *replicatedIndices) getObject() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		args := regxObject.FindStringSubmatch(r.URL.Path)
-		if len(args) != 4 {
+		if len(args) != 5 || args[4] != "" {
 			http.Error(w, "invalid URI", http.StatusBadRequest)
 			return
 		}
@@ -866,8 +877,8 @@ func (i *replicatedIndices) postRefs() http.Handler {
 
 func localIndexNotReady(resp replica.SimpleResponse) bool {
 	if err := resp.FirstError(); err != nil {
-		re, ok := err.(*replica.Error)
-		if ok && re.IsStatusCode(replica.StatusNotReady) {
+		var replicaErr *replica.Error
+		if errors.As(err, &replicaErr) && replicaErr.IsStatusCode(replica.StatusNotReady) {
 			return true
 		}
 	}

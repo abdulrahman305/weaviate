@@ -16,6 +16,7 @@ package db
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/weaviate/weaviate/entities/search"
 
@@ -66,7 +67,7 @@ func TestDeleteJourney(t *testing.T) {
 
 	t.Run("import some objects", func(t *testing.T) {
 		for _, res := range updateTestData() {
-			err := repo.PutObject(context.Background(), res.Object(), res.Vector, nil, nil, 0)
+			err := repo.PutObject(context.Background(), res.Object(), res.Vector, nil, nil, nil, 0)
 			require.Nil(t, err)
 		}
 	})
@@ -81,7 +82,7 @@ func TestDeleteJourney(t *testing.T) {
 					Limit: 100,
 				},
 				Properties: search.SelectProperties{{Name: "name"}},
-			}, []string{""}, [][]float32{searchVector})
+			}, []string{""}, []models.Vector{searchVector})
 
 			expectedOrder := []interface{}{
 				"element-0", "element-2", "element-3", "element-1",
@@ -135,7 +136,7 @@ func TestDeleteJourney(t *testing.T) {
 		func(t *testing.T) {
 			id := updateTestData()[0].ID
 
-			err := repo.DeleteObject(context.Background(), "UpdateTestClass", id, nil, "", 0)
+			err := repo.DeleteObject(context.Background(), "UpdateTestClass", id, time.Now(), nil, "", 0)
 			require.Nil(t, err)
 		})
 
@@ -146,7 +147,7 @@ func TestDeleteJourney(t *testing.T) {
 				Limit: 100,
 			},
 			Properties: search.SelectProperties{{Name: "name"}},
-		}, []string{""}, [][]float32{searchVector})
+		}, []string{""}, []models.Vector{searchVector})
 
 		expectedOrder := []interface{}{
 			"element-2", "element-3", "element-1",
@@ -177,7 +178,7 @@ func TestDeleteJourney(t *testing.T) {
 		func(t *testing.T) {
 			id := updateTestData()[1].ID
 
-			err := repo.DeleteObject(context.Background(), "UpdateTestClass", id, nil, "", 0)
+			err := repo.DeleteObject(context.Background(), "UpdateTestClass", id, time.Now(), nil, "", 0)
 			require.Nil(t, err)
 		})
 
@@ -188,7 +189,7 @@ func TestDeleteJourney(t *testing.T) {
 				Limit: 100,
 			},
 			Properties: search.SelectProperties{{Name: "name"}},
-		}, []string{""}, [][]float32{searchVector})
+		}, []string{""}, []models.Vector{searchVector})
 
 		expectedOrder := []interface{}{
 			"element-2", "element-3",
@@ -219,7 +220,7 @@ func TestDeleteJourney(t *testing.T) {
 				Limit: 100,
 			},
 			Properties: search.SelectProperties{{Name: "name"}},
-		}, []string{""}, [][]float32{searchVector})
+		}, []string{""}, []models.Vector{searchVector})
 
 		expectedOrder := []interface{}{
 			"element-2", "element-3",
@@ -231,7 +232,7 @@ func TestDeleteJourney(t *testing.T) {
 
 		id := updateTestData()[2].ID
 
-		err = repo.DeleteObject(context.Background(), "UpdateTestClass", id, nil, "", 0)
+		err = repo.DeleteObject(context.Background(), "UpdateTestClass", id, time.Now(), nil, "", 0)
 		require.Nil(t, err)
 
 		index := repo.GetIndex("UpdateTestClass")

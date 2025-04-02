@@ -39,6 +39,22 @@ func NewMin[T supportedValueType](capacity int) *Queue[T] {
 	}
 }
 
+// NewMin constructs a priority queue which prioritizes items with larger distance and smaller ID:
+// - higher scores first
+// - if tied, lower document id first
+// Thus, the signs in the Less function are opposite for scores and ids
+func NewMinWithId[T supportedValueType](capacity int) *Queue[T] {
+	return &Queue[T]{
+		items: make([]Item[T], 0, capacity),
+		less: func(items []Item[T], i, j int) bool {
+			if items[i].Dist == items[j].Dist {
+				return items[i].ID > items[j].ID
+			}
+			return items[i].Dist < items[j].Dist
+		},
+	}
+}
+
 // NewMax constructs a priority queue which prioritizes items with greater distance
 func NewMax[T supportedValueType](capacity int) *Queue[T] {
 	return &Queue[T]{
@@ -46,6 +62,22 @@ func NewMax[T supportedValueType](capacity int) *Queue[T] {
 		less: func(items []Item[T], i, j int) bool {
 			return items[i].Dist > items[j].Dist
 		},
+	}
+}
+
+func (q *Queue[T]) ShouldEnqueue(distance float32, limit int) bool {
+	return q.Len() < limit || q.Top().Dist < distance
+}
+
+func (q *Queue[T]) InsertAndPop(id uint64, score float64, limit int, worstDist *float64, val T) {
+	q.InsertWithValue(id, float32(score), val)
+	for q.Len() > limit {
+		q.Pop()
+	}
+	// only update the worst distance when the queue is full, otherwise results can be missing if the first
+	// entry that is checked already has a very high score
+	if q.Len() >= limit {
+		*worstDist = float64(q.Top().Dist)
 	}
 }
 
@@ -100,6 +132,25 @@ func (q *Queue[T]) InsertWithValue(id uint64, distance float32, val T) int {
 		Value: val,
 	}
 	return q.insert(item)
+}
+
+// DeleteItem deletes item meeting predicate's conditions
+// TODO aliszka optimize?
+func (q *Queue[T]) DeleteItem(match func(item Item[T]) bool) bool {
+	for i := range q.items {
+		if match(q.items[i]) {
+			if i == 0 {
+				q.Pop()
+			} else {
+				last := q.Len() - 1
+				q.items[i] = q.items[last]
+				q.items = q.items[:last]
+				q.heapify(0)
+			}
+			return true
+		}
+	}
+	return false
 }
 
 func (q *Queue[T]) insert(item Item[T]) int {

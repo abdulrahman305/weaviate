@@ -196,6 +196,14 @@ func (s *State) AllPhysicalShards() []string {
 	return names
 }
 
+func (s *State) AllPhysicalShardsAndReplicas() map[string][]string {
+	shardsToReplicas := make(map[string][]string, len(s.Physical))
+	for _, physical := range s.Physical {
+		shardsToReplicas[physical.Name] = physical.BelongsToNodes
+	}
+	return shardsToReplicas
+}
+
 func (s *State) AllLocalPhysicalShards() []string {
 	var names []string
 	for _, physical := range s.Physical {
@@ -350,9 +358,16 @@ func (s *State) AddPartition(name string, nodes []string, status string) Physica
 	return p
 }
 
-// DeletePartition to physical shards
-func (s *State) DeletePartition(name string) {
+// DeletePartition to physical shards. Return `true` if given partition is
+// actually deleted.
+func (s *State) DeletePartition(name string) (string, bool) {
+	t, ok := s.Physical[name]
+	if !ok {
+		return "", false
+	}
+	status := t.Status
 	delete(s.Physical, name)
+	return status, true
 }
 
 // ApplyNodeMapping replaces node names with their new value form nodeMapping in s.

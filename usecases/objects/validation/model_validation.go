@@ -13,6 +13,7 @@ package validation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -82,7 +83,7 @@ func (v *Validator) Object(ctx context.Context, class *models.Class,
 	incoming *models.Object, existing *models.Object,
 ) error {
 	if incoming.Class == "" {
-		return fmt.Errorf(ErrorMissingClass)
+		return errors.New(ErrorMissingClass)
 	}
 
 	if err := v.vector(ctx, class, incoming); err != nil {
@@ -132,9 +133,7 @@ func (v *Validator) ValidateExistence(ctx context.Context, ref *crossref.Ref, er
 	return nil
 }
 
-func (v *Validator) ValidateMultipleRef(ctx context.Context, refs models.MultipleRef,
-	errorVal string, tenant string,
-) ([]*crossref.Ref, error) {
+func (v *Validator) ValidateMultipleRef(refs models.MultipleRef) ([]*crossref.Ref, error) {
 	parsedRefs := make([]*crossref.Ref, len(refs))
 
 	if refs == nil {

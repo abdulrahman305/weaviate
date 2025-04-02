@@ -9,9 +9,6 @@
 //  CONTACT: hello@weaviate.io
 //
 
-//go:build integrationTest
-// +build integrationTest
-
 package db
 
 import (
@@ -19,7 +16,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"time"
 
+	"github.com/weaviate/weaviate/cluster/router/types"
 	"github.com/weaviate/weaviate/entities/dto"
 
 	"github.com/go-openapi/strfmt"
@@ -190,7 +189,7 @@ func (f *fakeRemoteClient) Exists(ctx context.Context, hostName, indexName,
 }
 
 func (f *fakeRemoteClient) DeleteObject(ctx context.Context, hostName, indexName,
-	shardName string, id strfmt.UUID, schemaVersion uint64,
+	shardName string, id strfmt.UUID, deletionTime time.Time, schemaVersion uint64,
 ) error {
 	return nil
 }
@@ -208,7 +207,7 @@ func (f *fakeRemoteClient) MultiGetObjects(ctx context.Context, hostName, indexN
 }
 
 func (f *fakeRemoteClient) SearchShard(ctx context.Context, hostName, indexName,
-	shardName string, vector [][]float32, targetVector []string, limit int,
+	shardName string, vector []models.Vector, targetVector []string, distance float32, limit int,
 	filters *filters.LocalFilter, _ *searchparams.KeywordRanking, sort []filters.Sort,
 	cursor *filters.Cursor, groupBy *searchparams.GroupBy, additional additional.Properties, targetCombination *dto.TargetCombination,
 	properties []string,
@@ -235,7 +234,7 @@ func (f *fakeRemoteClient) FindUUIDs(ctx context.Context, hostName, indexName, s
 }
 
 func (f *fakeRemoteClient) DeleteObjectBatch(ctx context.Context, hostName, indexName, shardName string,
-	uuids []strfmt.UUID, dryRun bool, schemaVersion uint64,
+	uuids []strfmt.UUID, deletionTime time.Time, dryRun bool, schemaVersion uint64,
 ) objects.BatchSimpleObjects {
 	return nil
 }
@@ -262,6 +261,16 @@ func (f *fakeRemoteClient) PutFile(ctx context.Context, hostName, indexName, sha
 	fileName string, payload io.ReadSeekCloser,
 ) error {
 	return nil
+}
+
+func (f *fakeRemoteClient) PauseAndListFiles(ctx context.Context, hostName, indexName, shardName string) ([]string, error) {
+	return nil, nil
+}
+
+func (f *fakeRemoteClient) GetFile(ctx context.Context, hostName, indexName, shardName,
+	fileName string,
+) (io.ReadCloser, error) {
+	return nil, nil
 }
 
 type fakeNodeResolver struct{}
@@ -295,7 +304,7 @@ func (f *fakeReplicationClient) PutObject(ctx context.Context, host, index, shar
 }
 
 func (f *fakeReplicationClient) DeleteObject(ctx context.Context, host, index, shard, requestID string,
-	id strfmt.UUID, schemaVersion uint64,
+	id strfmt.UUID, deletionTime time.Time, schemaVersion uint64,
 ) (replica.SimpleResponse, error) {
 	return replica.SimpleResponse{}, nil
 }
@@ -313,7 +322,7 @@ func (f *fakeReplicationClient) MergeObject(ctx context.Context, host, index, sh
 }
 
 func (f *fakeReplicationClient) DeleteObjects(ctx context.Context, host, index, shard, requestID string,
-	uuids []strfmt.UUID, dryRun bool, schemaVersion uint64,
+	uuids []strfmt.UUID, deletionTime time.Time, dryRun bool, schemaVersion uint64,
 ) (replica.SimpleResponse, error) {
 	return replica.SimpleResponse{}, nil
 }
@@ -347,7 +356,7 @@ func (*fakeReplicationClient) FetchObject(ctx context.Context, hostName, indexNa
 
 func (*fakeReplicationClient) DigestObjects(ctx context.Context,
 	hostName, indexName, shardName string, ids []strfmt.UUID, numRetries int,
-) (result []replica.RepairResponse, err error) {
+) (result []types.RepairResponse, err error) {
 	return nil, nil
 }
 
@@ -359,7 +368,7 @@ func (*fakeReplicationClient) FetchObjects(ctx context.Context, host,
 
 func (*fakeReplicationClient) OverwriteObjects(ctx context.Context,
 	host, index, shard string, objects []*objects.VObject,
-) ([]replica.RepairResponse, error) {
+) ([]types.RepairResponse, error) {
 	return nil, nil
 }
 
@@ -369,10 +378,10 @@ func (*fakeReplicationClient) FindUUIDs(ctx context.Context,
 	return nil, nil
 }
 
-func (c *fakeReplicationClient) DigestObjectsInTokenRange(ctx context.Context, host, index, shard string,
-	initialToken, finalToken uint64, limit int,
-) ([]replica.RepairResponse, uint64, error) {
-	return nil, 0, nil
+func (c *fakeReplicationClient) DigestObjectsInRange(ctx context.Context, host, index, shard string,
+	initialUUID, finalUUID strfmt.UUID, limit int,
+) ([]types.RepairResponse, error) {
+	return nil, nil
 }
 
 func (c *fakeReplicationClient) HashTreeLevel(ctx context.Context, host, index, shard string, level int,

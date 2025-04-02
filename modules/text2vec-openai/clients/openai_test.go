@@ -121,16 +121,76 @@ func TestClient(t *testing.T) {
 			return server.URL, nil
 		}
 
-		expected := &modulecomponents.VectorizationResult{
+		expected := &modulecomponents.VectorizationResult[[]float32]{
 			Text:       []string{"This is my text"},
 			Vector:     [][]float32{{0.1, 0.2, 0.3}},
 			Dimensions: 3,
 			Errors:     []error{nil},
 		}
-		res, _, err := c.Vectorize(context.Background(), []string{"This is my text"}, fakeClassConfig{classConfig: map[string]interface{}{"Type": "text", "Model": "ada"}})
+		res, rl, _, err := c.Vectorize(context.Background(), []string{"This is my text"}, fakeClassConfig{classConfig: map[string]interface{}{"Type": "text", "Model": "ada"}})
 
 		assert.Nil(t, err)
 		assert.Equal(t, expected, res)
+
+		assert.Equal(t, false, rl.UpdateWithMissingValues)
+		assert.Equal(t, 100, rl.RemainingTokens)
+		assert.Equal(t, 100, rl.RemainingRequests)
+		assert.Equal(t, 100, rl.LimitTokens)
+		assert.Equal(t, 100, rl.LimitRequests)
+	})
+
+	t.Run("when rate limit values are missing", func(t *testing.T) {
+		server := httptest.NewServer(&fakeHandler{t: t, noRlHeader: true})
+		defer server.Close()
+
+		c := New("apiKey", "", "", 0, nullLogger())
+		c.buildUrlFn = func(baseURL, resourceName, deploymentID, apiVersion string, isAzure bool) (string, error) {
+			return server.URL, nil
+		}
+
+		expected := &modulecomponents.VectorizationResult[[]float32]{
+			Text:       []string{"This is my text"},
+			Vector:     [][]float32{{0.1, 0.2, 0.3}},
+			Dimensions: 3,
+			Errors:     []error{nil},
+		}
+		res, rl, _, err := c.Vectorize(context.Background(), []string{"This is my text"}, fakeClassConfig{classConfig: map[string]interface{}{"Type": "text", "Model": "ada"}})
+
+		assert.Nil(t, err)
+		assert.Equal(t, expected, res)
+
+		assert.Equal(t, true, rl.UpdateWithMissingValues)
+		assert.Equal(t, -1, rl.RemainingTokens)
+		assert.Equal(t, -1, rl.RemainingRequests)
+		assert.Equal(t, -1, rl.LimitTokens)
+		assert.Equal(t, -1, rl.LimitRequests)
+	})
+
+	t.Run("when rate limit values are returned but are bad values", func(t *testing.T) {
+		server := httptest.NewServer(&fakeHandler{t: t, noRlHeader: false, RlValues: "0"})
+		defer server.Close()
+
+		c := New("apiKey", "", "", 0, nullLogger())
+		c.buildUrlFn = func(baseURL, resourceName, deploymentID, apiVersion string, isAzure bool) (string, error) {
+			return server.URL, nil
+		}
+
+		expected := &modulecomponents.VectorizationResult[[]float32]{
+			Text:       []string{"This is my text"},
+			Vector:     [][]float32{{0.1, 0.2, 0.3}},
+			Dimensions: 3,
+			Errors:     []error{nil},
+		}
+		res, rl, _, err := c.Vectorize(context.Background(), []string{"This is my text"}, fakeClassConfig{classConfig: map[string]interface{}{"Type": "text", "Model": "ada"}})
+
+		assert.Nil(t, err)
+		assert.Equal(t, expected, res)
+
+		assert.Equal(t, true, rl.UpdateWithMissingValues)
+		assert.Equal(t, 0, rl.RemainingTokens)
+		assert.Equal(t, 0, rl.RemainingRequests)
+		assert.Equal(t, 0, rl.LimitTokens)
+		assert.Equal(t, 0, rl.LimitRequests)
 	})
 
 	t.Run("when the context is expired", func(t *testing.T) {
@@ -144,7 +204,7 @@ func TestClient(t *testing.T) {
 		ctx, cancel := context.WithDeadline(context.Background(), time.Now())
 		defer cancel()
 
-		_, _, err := c.Vectorize(ctx, []string{"This is my text"}, fakeClassConfig{})
+		_, _, _, err := c.Vectorize(ctx, []string{"This is my text"}, fakeClassConfig{})
 
 		require.NotNil(t, err)
 		assert.Contains(t, err.Error(), "context deadline exceeded")
@@ -161,7 +221,7 @@ func TestClient(t *testing.T) {
 			return server.URL, nil
 		}
 
-		_, _, err := c.Vectorize(context.Background(), []string{"This is my text"},
+		_, _, _, err := c.Vectorize(context.Background(), []string{"This is my text"},
 			fakeClassConfig{})
 
 		require.NotNil(t, err)
@@ -180,7 +240,7 @@ func TestClient(t *testing.T) {
 			return server.URL, nil
 		}
 
-		_, _, err := c.Vectorize(context.Background(), []string{"This is my text"},
+		_, _, _, err := c.Vectorize(context.Background(), []string{"This is my text"},
 			fakeClassConfig{})
 
 		require.NotNil(t, err)
@@ -198,13 +258,13 @@ func TestClient(t *testing.T) {
 		ctxWithValue := context.WithValue(context.Background(),
 			"X-Openai-Api-Key", []string{"some-key"})
 
-		expected := &modulecomponents.VectorizationResult{
+		expected := &modulecomponents.VectorizationResult[[]float32]{
 			Text:       []string{"This is my text"},
 			Vector:     [][]float32{{0.1, 0.2, 0.3}},
 			Dimensions: 3,
 			Errors:     []error{nil},
 		}
-		res, _, err := c.Vectorize(ctxWithValue, []string{"This is my text"},
+		res, _, _, err := c.Vectorize(ctxWithValue, []string{"This is my text"},
 			fakeClassConfig{classConfig: map[string]interface{}{"Type": "text", "Model": "ada"}})
 
 		require.Nil(t, err)
@@ -222,7 +282,7 @@ func TestClient(t *testing.T) {
 		ctx, cancel := context.WithDeadline(context.Background(), time.Now())
 		defer cancel()
 
-		_, _, err := c.Vectorize(ctx, []string{"This is my text"}, fakeClassConfig{})
+		_, _, _, err := c.Vectorize(ctx, []string{"This is my text"}, fakeClassConfig{})
 
 		require.NotNil(t, err)
 		assert.EqualError(t, err, "API Key: no api key found "+
@@ -241,7 +301,7 @@ func TestClient(t *testing.T) {
 		ctxWithValue := context.WithValue(context.Background(),
 			"X-Openai-Api-Key", []string{""})
 
-		_, _, err := c.Vectorize(ctxWithValue, []string{"This is my text"},
+		_, _, _, err := c.Vectorize(ctxWithValue, []string{"This is my text"},
 			fakeClassConfig{classConfig: map[string]interface{}{"Type": "text", "Model": "ada"}})
 
 		require.NotNil(t, err)
@@ -315,6 +375,8 @@ type fakeHandler struct {
 	t               *testing.T
 	serverError     error
 	headerRequestID string
+	noRlHeader      bool
+	RlValues        string
 }
 
 func (f *fakeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -363,166 +425,23 @@ func (f *fakeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	outBytes, err := json.Marshal(embedding)
 	require.Nil(f.t, err)
 
+	if !f.noRlHeader {
+		rlValues := f.RlValues
+		if f.RlValues == "" {
+			rlValues = "100"
+		}
+		w.Header().Add("x-ratelimit-limit-requests", rlValues)
+		w.Header().Add("x-ratelimit-limit-tokens", rlValues)
+		w.Header().Add("x-ratelimit-remaining-requests", rlValues)
+		w.Header().Add("x-ratelimit-remaining-tokens", rlValues)
+	}
+
 	w.Write(outBytes)
 }
 
 func nullLogger() logrus.FieldLogger {
 	l, _ := test.NewNullLogger()
 	return l
-}
-
-func Test_getModelString(t *testing.T) {
-	t.Run("getModelStringDocument", func(t *testing.T) {
-		type args struct {
-			docType string
-			model   string
-			version string
-		}
-		tests := []struct {
-			name string
-			args args
-			want string
-		}{
-			{
-				name: "Document type: text model: ada vectorizationType: document",
-				args: args{
-					docType: "text",
-					model:   "ada",
-				},
-				want: "text-search-ada-doc-001",
-			},
-			{
-				name: "Document type: text model: ada-002 vectorizationType: document",
-				args: args{
-					docType: "text",
-					model:   "ada",
-					version: "002",
-				},
-				want: "text-embedding-ada-002",
-			},
-			{
-				name: "Document type: text model: babbage vectorizationType: document",
-				args: args{
-					docType: "text",
-					model:   "babbage",
-				},
-				want: "text-search-babbage-doc-001",
-			},
-			{
-				name: "Document type: text model: curie vectorizationType: document",
-				args: args{
-					docType: "text",
-					model:   "curie",
-				},
-				want: "text-search-curie-doc-001",
-			},
-			{
-				name: "Document type: text model: davinci vectorizationType: document",
-				args: args{
-					docType: "text",
-					model:   "davinci",
-				},
-				want: "text-search-davinci-doc-001",
-			},
-			{
-				name: "Document type: code model: ada vectorizationType: code",
-				args: args{
-					docType: "code",
-					model:   "ada",
-				},
-				want: "code-search-ada-code-001",
-			},
-			{
-				name: "Document type: code model: babbage vectorizationType: code",
-				args: args{
-					docType: "code",
-					model:   "babbage",
-				},
-				want: "code-search-babbage-code-001",
-			},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				v := New("apiKey", "", "", 0, nullLogger())
-				config := ent.VectorizationConfig{Type: tt.args.docType, Model: tt.args.model, ModelVersion: tt.args.version}
-				if got := v.getModelString(config, "document"); got != tt.want {
-					t.Errorf("vectorizer.getModelString() = %v, want %v", got, tt.want)
-				}
-			})
-		}
-	})
-
-	t.Run("getModelStringQuery", func(t *testing.T) {
-		type args struct {
-			docType string
-			model   string
-			version string
-		}
-		tests := []struct {
-			name string
-			args args
-			want string
-		}{
-			{
-				name: "Document type: text model: ada vectorizationType: query",
-				args: args{
-					docType: "text",
-					model:   "ada",
-				},
-				want: "text-search-ada-query-001",
-			},
-			{
-				name: "Document type: text model: babbage vectorizationType: query",
-				args: args{
-					docType: "text",
-					model:   "babbage",
-				},
-				want: "text-search-babbage-query-001",
-			},
-			{
-				name: "Document type: text model: curie vectorizationType: query",
-				args: args{
-					docType: "text",
-					model:   "curie",
-				},
-				want: "text-search-curie-query-001",
-			},
-			{
-				name: "Document type: text model: davinci vectorizationType: query",
-				args: args{
-					docType: "text",
-					model:   "davinci",
-				},
-				want: "text-search-davinci-query-001",
-			},
-			{
-				name: "Document type: code model: ada vectorizationType: text",
-				args: args{
-					docType: "code",
-					model:   "ada",
-				},
-				want: "code-search-ada-text-001",
-			},
-			{
-				name: "Document type: code model: babbage vectorizationType: text",
-				args: args{
-					docType: "code",
-					model:   "babbage",
-				},
-				want: "code-search-babbage-text-001",
-			},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				v := New("apiKey", "", "", 0, nullLogger())
-				config := ent.VectorizationConfig{Type: tt.args.docType, Model: tt.args.model, ModelVersion: tt.args.version}
-
-				if got := v.getModelString(config, "query"); got != tt.want {
-					t.Errorf("vectorizer.getModelString() = %v, want %v", got, tt.want)
-				}
-			})
-		}
-	})
 }
 
 func TestOpenAIApiErrorDecode(t *testing.T) {

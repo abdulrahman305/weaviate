@@ -88,24 +88,32 @@ func TestReadAnWriteLargeBuffer(t *testing.T) {
 }
 
 func TestWritingAndReadingBufferOfDynamicLength(t *testing.T) {
+	empty := []byte{}
+
 	t.Run("uint64 length indicator", func(t *testing.T) {
 		bufLen := uint64(mustRandIntn(1024))
 		buf := make([]byte, bufLen)
 		rand.Read(buf)
 
 		// uint64 length indicator + buffer + unrelated data at end of buffer
-		totalBuf := make([]byte, bufLen+16)
+		totalBuf := make([]byte, 8+bufLen+8+8)
 		bo := NewReadWriter(totalBuf)
 
-		assert.Nil(t, bo.CopyBytesToBufferWithUint64LengthIndicator(buf))
-		bo.WriteUint64(17)
+		// write
+		assert.NoError(t, bo.CopyBytesToBufferWithUint64LengthIndicator(buf))
 		assert.Equal(t, buf, totalBuf[8:8+bufLen])
+		bo.WriteUint64(17)
+		assert.NoError(t, bo.CopyBytesToBufferWithUint64LengthIndicator(empty))
 
 		// read
 		bo = NewReadWriter(totalBuf)
 		bufRead := bo.ReadBytesFromBufferWithUint64LengthIndicator()
 		assert.Len(t, bufRead, int(bufLen))
+		assert.Equal(t, buf, bufRead)
 		assert.Equal(t, uint64(17), bo.ReadUint64())
+		bufRead = bo.ReadBytesFromBufferWithUint64LengthIndicator()
+		assert.Len(t, bufRead, 0)
+		assert.NotNil(t, bufRead)
 
 		// discard
 		bo = NewReadWriter(totalBuf)
@@ -120,18 +128,24 @@ func TestWritingAndReadingBufferOfDynamicLength(t *testing.T) {
 		rand.Read(buf)
 
 		// uint32 length indicator + buffer + unrelated data at end of buffer
-		totalBuf := make([]byte, bufLen+8)
+		totalBuf := make([]byte, 4+bufLen+4+4)
 		bo := NewReadWriter(totalBuf)
 
-		assert.Nil(t, bo.CopyBytesToBufferWithUint32LengthIndicator(buf))
-		bo.WriteUint32(17)
+		// write
+		assert.NoError(t, bo.CopyBytesToBufferWithUint32LengthIndicator(buf))
 		assert.Equal(t, buf, totalBuf[4:4+bufLen])
+		bo.WriteUint32(17)
+		assert.NoError(t, bo.CopyBytesToBufferWithUint32LengthIndicator(empty))
 
 		// read
 		bo = NewReadWriter(totalBuf)
 		bufRead := bo.ReadBytesFromBufferWithUint32LengthIndicator()
 		assert.Len(t, bufRead, int(bufLen))
+		assert.Equal(t, buf, bufRead)
 		assert.Equal(t, uint32(17), bo.ReadUint32())
+		bufRead = bo.ReadBytesFromBufferWithUint32LengthIndicator()
+		assert.Len(t, bufRead, 0)
+		assert.NotNil(t, bufRead)
 
 		// discard
 		bo = NewReadWriter(totalBuf)
@@ -199,14 +213,14 @@ func TestIntsFromByteVector(t *testing.T) {
 	})
 }
 
-func TestFloat32ToByteVector(t *testing.T) {
+func TestFp32SliceToBytes(t *testing.T) {
 	t.Run("empty array", func(t *testing.T) {
-		bytes := Float32ToByteVector([]float32{})
+		bytes := Fp32SliceToBytes([]float32{})
 		assert.Equal(t, []byte{}, bytes)
 	})
 
 	t.Run("non-empty array", func(t *testing.T) {
-		bytes := Float32ToByteVector([]float32{1.1, 2.2, 3.3})
+		bytes := Fp32SliceToBytes([]float32{1.1, 2.2, 3.3})
 		assert.Equal(t, []byte{
 			0xcd, 0xcc, 0x8c, 0x3f,
 			0xcd, 0xcc, 0xc, 0x40,
@@ -215,30 +229,91 @@ func TestFloat32ToByteVector(t *testing.T) {
 	})
 }
 
-func TestFloat32FromByteVector(t *testing.T) {
+func TestFp32SliceOfSlicesToBytes(t *testing.T) {
 	t.Run("empty array", func(t *testing.T) {
-		floats := Float32FromByteVector([]byte{})
-		assert.Equal(t, []float32{}, floats)
+		bytes := Fp32SliceOfSlicesToBytes([][]float32{})
+		assert.Equal(t, []byte{}, bytes)
 	})
 
-	t.Run("non-empty array", func(t *testing.T) {
-		floats := Float32FromByteVector([]byte{
-			0xcd, 0xcc, 0x8c, 0x3f,
-			0xcd, 0xcc, 0xc, 0x40,
-			0x33, 0x33, 0x53, 0x40,
-		})
-		assert.Equal(t, []float32{1.1, 2.2, 3.3}, floats)
-	})
-}
-
-func TestFloat64ToByteVector(t *testing.T) {
-	t.Run("empty array", func(t *testing.T) {
-		bytes := Float32ToByteVector([]float32{})
+	t.Run("empty subarrays", func(t *testing.T) {
+		bytes := Fp32SliceOfSlicesToBytes([][]float32{{}, {}, {}})
 		assert.Equal(t, []byte{}, bytes)
 	})
 
 	t.Run("non-empty array", func(t *testing.T) {
-		bytes := Float64ToByteVector([]float64{1.1, 2.2, 3.3})
+		bytes := Fp32SliceOfSlicesToBytes([][]float32{
+			{1.1, 2.2, 3.3},
+			{4.4, 5.5, 6.6},
+			{7.7, 8.8, 9.9},
+		})
+		assert.Equal(t, []byte{
+			0x3, 0x0,
+			0xcd, 0xcc, 0x8c, 0x3f, 0xcd, 0xcc, 0xc, 0x40, 0x33, 0x33, 0x53, 0x40,
+			0xcd, 0xcc, 0x8c, 0x40, 0x0, 0x0, 0xb0, 0x40, 0x33, 0x33, 0xd3, 0x40,
+			0x66, 0x66, 0xf6, 0x40, 0xcd, 0xcc, 0xc, 0x41, 0x66, 0x66, 0x1e, 0x41,
+		}, bytes)
+	})
+}
+
+func TestFp32SliceFromBytes(t *testing.T) {
+	t.Run("empty array", func(t *testing.T) {
+		slice := Fp32SliceFromBytes([]byte{})
+		assert.Equal(t, []float32{}, slice)
+	})
+
+	t.Run("non-empty array", func(t *testing.T) {
+		slice := Fp32SliceFromBytes([]byte{
+			0xcd, 0xcc, 0x8c, 0x3f,
+			0xcd, 0xcc, 0xc, 0x40,
+			0x33, 0x33, 0x53, 0x40,
+		})
+		assert.Equal(t, []float32{1.1, 2.2, 3.3}, slice)
+	})
+}
+
+func TestFp32SliceOfSlicesFromBytes(t *testing.T) {
+	t.Run("empty array", func(t *testing.T) {
+		slices, err := Fp32SliceOfSlicesFromBytes([]byte{})
+		assert.Nil(t, err)
+		assert.Equal(t, [][]float32{}, slices)
+	})
+
+	t.Run("dimension is 0", func(t *testing.T) {
+		_, err := Fp32SliceOfSlicesFromBytes([]byte{0x0, 0x0})
+		assert.NotNil(t, err)
+		assert.Equal(t, "dimension cannot be 0", err.Error())
+	})
+
+	t.Run("empty subarrays", func(t *testing.T) {
+		slices, err := Fp32SliceOfSlicesFromBytes([]byte{0x3, 0x0})
+		assert.Nil(t, err)
+		assert.Equal(t, [][]float32{}, slices)
+	})
+
+	t.Run("non-empty array", func(t *testing.T) {
+		slices, err := Fp32SliceOfSlicesFromBytes([]byte{
+			0x3, 0x0,
+			0xcd, 0xcc, 0x8c, 0x3f, 0xcd, 0xcc, 0xc, 0x40, 0x33, 0x33, 0x53, 0x40,
+			0xcd, 0xcc, 0x8c, 0x40, 0x0, 0x0, 0xb0, 0x40, 0x33, 0x33, 0xd3, 0x40,
+			0x66, 0x66, 0xf6, 0x40, 0xcd, 0xcc, 0xc, 0x41, 0x66, 0x66, 0x1e, 0x41,
+		})
+		assert.Nil(t, err)
+		assert.Equal(t, [][]float32{
+			{1.1, 2.2, 3.3},
+			{4.4, 5.5, 6.6},
+			{7.7, 8.8, 9.9},
+		}, slices)
+	})
+}
+
+func TestFp64SliceToBytes(t *testing.T) {
+	t.Run("empty array", func(t *testing.T) {
+		bytes := Fp32SliceToBytes([]float32{})
+		assert.Equal(t, []byte{}, bytes)
+	})
+
+	t.Run("non-empty array", func(t *testing.T) {
+		bytes := Fp64SliceToBytes([]float64{1.1, 2.2, 3.3})
 		assert.Equal(t, []byte{
 			0x9a, 0x99, 0x99, 0x99, 0x99, 0x99, 0xf1, 0x3f,
 			0x9a, 0x99, 0x99, 0x99, 0x99, 0x99, 0x1, 0x40,
@@ -247,18 +322,18 @@ func TestFloat64ToByteVector(t *testing.T) {
 	})
 }
 
-func TestFloat64FromByteVector(t *testing.T) {
+func TestFp64SliceFromBytes(t *testing.T) {
 	t.Run("empty array", func(t *testing.T) {
-		floats := Float64FromByteVector([]byte{})
-		assert.Equal(t, []float64{}, floats)
+		slice := Fp64SliceFromBytes([]byte{})
+		assert.Equal(t, []float64{}, slice)
 	})
 
 	t.Run("non-empty array", func(t *testing.T) {
-		floats := Float64FromByteVector([]byte{
+		slice := Fp64SliceFromBytes([]byte{
 			0x9a, 0x99, 0x99, 0x99, 0x99, 0x99, 0xf1, 0x3f,
 			0x9a, 0x99, 0x99, 0x99, 0x99, 0x99, 0x1, 0x40,
 			0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0xa, 0x40,
 		})
-		assert.Equal(t, []float64{1.1, 2.2, 3.3}, floats)
+		assert.Equal(t, []float64{1.1, 2.2, 3.3}, slice)
 	})
 }

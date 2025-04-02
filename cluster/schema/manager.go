@@ -19,11 +19,12 @@ import (
 	"io"
 
 	"github.com/hashicorp/raft"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
+	gproto "google.golang.org/protobuf/proto"
+
 	command "github.com/weaviate/weaviate/cluster/proto/api"
 	"github.com/weaviate/weaviate/entities/models"
-	"github.com/weaviate/weaviate/exp/metadata"
-	gproto "google.golang.org/protobuf/proto"
 )
 
 var (
@@ -39,20 +40,9 @@ type SchemaManager struct {
 	log    *logrus.Logger
 }
 
-func NewSchemaManager(nodeId string, db Indexer, parser Parser, log *logrus.Logger) *SchemaManager {
+func NewSchemaManager(nodeId string, db Indexer, parser Parser, reg prometheus.Registerer, log *logrus.Logger) *SchemaManager {
 	return &SchemaManager{
-		schema: NewSchema(nodeId, db),
-		db:     db,
-		parser: parser,
-		log:    log,
-	}
-}
-
-func NewSchemaManagerWithTenantEvents(nodeId string, db Indexer, parser Parser,
-	classTenantDataEvents chan metadata.ClassTenant, log *logrus.Logger,
-) *SchemaManager {
-	return &SchemaManager{
-		schema: NewSchemaWithTenantEvents(nodeId, db, classTenantDataEvents),
+		schema: NewSchema(nodeId, db, reg),
 		db:     db,
 		parser: parser,
 		log:    log,
@@ -60,25 +50,25 @@ func NewSchemaManagerWithTenantEvents(nodeId string, db Indexer, parser Parser,
 }
 
 func (s *SchemaManager) NewSchemaReader() SchemaReader {
-	return SchemaReader{
-		schema: s.schema,
+	return NewSchemaReader(
+		s.schema,
 		// Pass a versioned reader that will ignore all version and always return valid, we want to read the latest
 		// state and not have to wait on a version
-		versionedSchemaReader: VersionedSchemaReader{
+		VersionedSchemaReader{
 			schema:        s.schema,
 			WaitForUpdate: func(context.Context, uint64) error { return nil },
 		},
-	}
+	)
 }
 
 func (s *SchemaManager) NewSchemaReaderWithWaitFunc(f func(context.Context, uint64) error) SchemaReader {
-	return SchemaReader{
-		schema: s.schema,
-		versionedSchemaReader: VersionedSchemaReader{
+	return NewSchemaReader(
+		s.schema,
+		VersionedSchemaReader{
 			schema:        s.schema,
 			WaitForUpdate: f,
 		},
-	}
+	)
 }
 
 func (s *SchemaManager) SetIndexer(idx Indexer) {
@@ -128,13 +118,11 @@ func (s *SchemaManager) ReloadDBFromSchema() {
 	cs := make([]command.UpdateClassRequest, len(classes))
 	i := 0
 	for _, v := range classes {
-		migrateRangeIndexPropIfNeeded(&v.Class)
-		// an immutable copy of the sharding state has to be used to avoid conflicts
-		shardingState, _ := v.CopyShardingState()
-		cs[i] = command.UpdateClassRequest{Class: &v.Class, State: shardingState}
+		migratePropertiesIfNecessary(&v.Class)
+		cs[i] = command.UpdateClassRequest{Class: &v.Class, State: &v.Sharding}
 		i++
 	}
-
+	s.db.TriggerSchemaUpdateCallbacks()
 	s.log.Info("reload local db: update schema ...")
 	s.db.ReloadLocalDB(context.Background(), cs)
 }
@@ -143,7 +131,7 @@ func (s *SchemaManager) Close(ctx context.Context) (err error) {
 	return s.db.Close(ctx)
 }
 
-func (s *SchemaManager) AddClass(cmd *command.ApplyRequest, nodeID string, schemaOnly bool) error {
+func (s *SchemaManager) AddClass(cmd *command.ApplyRequest, nodeID string, schemaOnly bool, enableSchemaCallback bool) error {
 	req := command.AddClassRequest{}
 	if err := json.Unmarshal(cmd.SubCommand, &req); err != nil {
 		return fmt.Errorf("%w: %w", ErrBadRequest, err)
@@ -155,18 +143,22 @@ func (s *SchemaManager) AddClass(cmd *command.ApplyRequest, nodeID string, schem
 		return fmt.Errorf("%w: parsing class: %w", ErrBadRequest, err)
 	}
 	req.State.SetLocalName(nodeID)
+	// We need to make a copy of the sharding state to ensure that the state stored in the internal schema has no
+	// references to. As we will make modification to it to reflect change in the sharding state (adding/removing
+	// tenant) we don't want another goroutine holding a pointer to it and finding issues with concurrent read/writes.
+	shardingStateCopy := req.State.DeepCopy()
 	return s.apply(
 		applyOp{
-			op:                    cmd.GetType().String(),
-			updateSchema:          func() error { return s.schema.addClass(req.Class, req.State, cmd.Version) },
-			updateStore:           func() error { return s.db.AddClass(req) },
-			schemaOnly:            schemaOnly,
-			triggerSchemaCallback: true,
+			op:                   cmd.GetType().String(),
+			updateSchema:         func() error { return s.schema.addClass(req.Class, &shardingStateCopy, cmd.Version) },
+			updateStore:          func() error { return s.db.AddClass(req) },
+			schemaOnly:           schemaOnly,
+			enableSchemaCallback: enableSchemaCallback,
 		},
 	)
 }
 
-func (s *SchemaManager) RestoreClass(cmd *command.ApplyRequest, nodeID string, schemaOnly bool) error {
+func (s *SchemaManager) RestoreClass(cmd *command.ApplyRequest, nodeID string, schemaOnly bool, enableSchemaCallback bool) error {
 	req := command.AddClassRequest{}
 	if err := json.Unmarshal(cmd.SubCommand, &req); err != nil {
 		return fmt.Errorf("%w: %w", ErrBadRequest, err)
@@ -187,11 +179,11 @@ func (s *SchemaManager) RestoreClass(cmd *command.ApplyRequest, nodeID string, s
 
 	return s.apply(
 		applyOp{
-			op:                    cmd.GetType().String(),
-			updateSchema:          func() error { return s.schema.addClass(req.Class, req.State, cmd.Version) },
-			updateStore:           func() error { return s.db.AddClass(req) },
-			schemaOnly:            schemaOnly,
-			triggerSchemaCallback: true,
+			op:                   cmd.GetType().String(),
+			updateSchema:         func() error { return s.schema.addClass(req.Class, req.State, cmd.Version) },
+			updateStore:          func() error { return s.db.AddClass(req) },
+			schemaOnly:           schemaOnly,
+			enableSchemaCallback: enableSchemaCallback,
 		},
 	)
 }
@@ -206,7 +198,7 @@ func (s *SchemaManager) ReplaceStatesNodeName(new string) {
 
 // UpdateClass modifies the vectors and inverted indexes associated with a class
 // Other class properties are handled by separate functions
-func (s *SchemaManager) UpdateClass(cmd *command.ApplyRequest, nodeID string, schemaOnly bool) error {
+func (s *SchemaManager) UpdateClass(cmd *command.ApplyRequest, nodeID string, schemaOnly bool, enableSchemaCallback bool) error {
 	req := command.UpdateClassRequest{}
 	if err := json.Unmarshal(cmd.SubCommand, &req); err != nil {
 		return fmt.Errorf("%w: %w", ErrBadRequest, err)
@@ -216,6 +208,9 @@ func (s *SchemaManager) UpdateClass(cmd *command.ApplyRequest, nodeID string, sc
 	}
 
 	update := func(meta *metaClass) error {
+		// Ensure that if non-default values for properties is stored in raft we fix them before processing an update to
+		// avoid triggering diff on properties and therefore discarding a legitimate update.
+		migratePropertiesIfNecessary(&meta.Class)
 		u, err := s.parser.ParseClassUpdate(&meta.Class, req.Class)
 		if err != nil {
 			return fmt.Errorf("%w :parse class update: %w", ErrBadRequest, err)
@@ -226,6 +221,7 @@ func (s *SchemaManager) UpdateClass(cmd *command.ApplyRequest, nodeID string, sc
 		meta.Class.ReplicationConfig = u.ReplicationConfig
 		meta.Class.MultiTenancyConfig = u.MultiTenancyConfig
 		meta.Class.Description = u.Description
+		meta.Class.Properties = u.Properties
 		meta.ClassVersion = cmd.Version
 		if req.State != nil {
 			meta.Sharding = *req.State
@@ -235,16 +231,16 @@ func (s *SchemaManager) UpdateClass(cmd *command.ApplyRequest, nodeID string, sc
 
 	return s.apply(
 		applyOp{
-			op:                    cmd.GetType().String(),
-			updateSchema:          func() error { return s.schema.updateClass(req.Class.Class, update) },
-			updateStore:           func() error { return s.db.UpdateClass(req) },
-			schemaOnly:            schemaOnly,
-			triggerSchemaCallback: true,
+			op:                   cmd.GetType().String(),
+			updateSchema:         func() error { return s.schema.updateClass(req.Class.Class, update) },
+			updateStore:          func() error { return s.db.UpdateClass(req) },
+			schemaOnly:           schemaOnly,
+			enableSchemaCallback: enableSchemaCallback,
 		},
 	)
 }
 
-func (s *SchemaManager) DeleteClass(cmd *command.ApplyRequest, schemaOnly bool) error {
+func (s *SchemaManager) DeleteClass(cmd *command.ApplyRequest, schemaOnly bool, enableSchemaCallback bool) error {
 	var hasFrozen bool
 	tenants, err := s.schema.getTenants(cmd.Class, nil)
 	if err != nil {
@@ -261,16 +257,16 @@ func (s *SchemaManager) DeleteClass(cmd *command.ApplyRequest, schemaOnly bool) 
 
 	return s.apply(
 		applyOp{
-			op:                    cmd.GetType().String(),
-			updateSchema:          func() error { s.schema.deleteClass(cmd.Class); return nil },
-			updateStore:           func() error { return s.db.DeleteClass(cmd.Class, hasFrozen) },
-			schemaOnly:            schemaOnly,
-			triggerSchemaCallback: true,
+			op:                   cmd.GetType().String(),
+			updateSchema:         func() error { s.schema.deleteClass(cmd.Class); return nil },
+			updateStore:          func() error { return s.db.DeleteClass(cmd.Class, hasFrozen) },
+			schemaOnly:           schemaOnly,
+			enableSchemaCallback: enableSchemaCallback,
 		},
 	)
 }
 
-func (s *SchemaManager) AddProperty(cmd *command.ApplyRequest, schemaOnly bool) error {
+func (s *SchemaManager) AddProperty(cmd *command.ApplyRequest, schemaOnly bool, enableSchemaCallback bool) error {
 	req := command.AddPropertyRequest{}
 	if err := json.Unmarshal(cmd.SubCommand, &req); err != nil {
 		return fmt.Errorf("%w: %w", ErrBadRequest, err)
@@ -281,11 +277,11 @@ func (s *SchemaManager) AddProperty(cmd *command.ApplyRequest, schemaOnly bool) 
 
 	return s.apply(
 		applyOp{
-			op:                    cmd.GetType().String(),
-			updateSchema:          func() error { return s.schema.addProperty(cmd.Class, cmd.Version, req.Properties...) },
-			updateStore:           func() error { return s.db.AddProperty(cmd.Class, req) },
-			schemaOnly:            schemaOnly,
-			triggerSchemaCallback: true,
+			op:                   cmd.GetType().String(),
+			updateSchema:         func() error { return s.schema.addProperty(cmd.Class, cmd.Version, req.Properties...) },
+			updateStore:          func() error { return s.db.AddProperty(cmd.Class, req) },
+			schemaOnly:           schemaOnly,
+			enableSchemaCallback: enableSchemaCallback,
 		},
 	)
 }
@@ -347,11 +343,29 @@ func (s *SchemaManager) DeleteTenants(cmd *command.ApplyRequest, schemaOnly bool
 		return fmt.Errorf("%w: %w", ErrBadRequest, err)
 	}
 
+	tenantsResponse, err := s.schema.getTenants(cmd.Class, req.Tenants)
+	if err != nil {
+		// error are handled by the updateSchema, so they are ignored here.
+		// Instead, we log the error to detect tenant status before deleting
+		// them from the schema. this allows the database layer to decide whether
+		// to send the delete request to the cloud provider.
+		s.log.WithFields(logrus.Fields{
+			"class":   cmd.Class,
+			"tenants": req.Tenants,
+			"error":   err.Error(),
+		}).Error("error getting tenants")
+	}
+
+	tenants := make([]*models.Tenant, len(tenantsResponse))
+	for i := range tenantsResponse {
+		tenants[i] = &tenantsResponse[i].Tenant
+	}
+
 	return s.apply(
 		applyOp{
 			op:           cmd.GetType().String(),
 			updateSchema: func() error { return s.schema.deleteTenants(cmd.Class, cmd.Version, req) },
-			updateStore:  func() error { return s.db.DeleteTenants(cmd.Class, req) },
+			updateStore:  func() error { return s.db.DeleteTenants(cmd.Class, tenants) },
 			schemaOnly:   schemaOnly,
 		},
 	)
@@ -374,11 +388,11 @@ func (s *SchemaManager) UpdateTenantsProcess(cmd *command.ApplyRequest, schemaOn
 }
 
 type applyOp struct {
-	op                    string
-	updateSchema          func() error
-	updateStore           func() error
-	schemaOnly            bool
-	triggerSchemaCallback bool
+	op                   string
+	updateSchema         func() error
+	updateStore          func() error
+	schemaOnly           bool
+	enableSchemaCallback bool
 }
 
 func (op applyOp) validate() error {
@@ -397,12 +411,18 @@ func (op applyOp) validate() error {
 // apply does apply commands from RAFT to schema 1st and then db
 func (s *SchemaManager) apply(op applyOp) error {
 	if err := op.validate(); err != nil {
-		return fmt.Errorf("could not validate raft apply op: %s", err)
+		return fmt.Errorf("could not validate raft apply op: %w", err)
 	}
 
 	// schema applied 1st to make sure any validation happen before applying it to db
 	if err := op.updateSchema(); err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrSchema, op.op, err)
+	}
+
+	if op.enableSchemaCallback {
+		// TriggerSchemaUpdateCallbacks is concurrent and at
+		// this point of time schema shall be up to date.
+		s.db.TriggerSchemaUpdateCallbacks()
 	}
 
 	if !op.schemaOnly {
@@ -411,22 +431,35 @@ func (s *SchemaManager) apply(op applyOp) error {
 		}
 	}
 
-	// Always trigger the schema callback last
-	if op.triggerSchemaCallback {
-		s.db.TriggerSchemaUpdateCallbacks()
-	}
 	return nil
 }
 
+// migratePropertiesIfNecessary migrate properties and set default values for them.
+// This is useful when adding new properties to ensure that their default value is properly set.
+// Current migrated properties:
 // IndexRangeFilters was introduced with 1.26, so objects which were created
 // on an older version, will have this value set to nil when the instance is
 // upgraded. If we come across a property with nil IndexRangeFilters, it
 // needs to be set as false, to avoid false positive class differences on
 // comparison during class updates.
-func migrateRangeIndexPropIfNeeded(class *models.Class) {
+func migratePropertiesIfNecessary(class *models.Class) {
 	for _, prop := range class.Properties {
 		if prop.IndexRangeFilters == nil {
 			prop.IndexRangeFilters = func() *bool { f := false; return &f }()
 		}
+
+		// Ensure we also migrate nested properties
+		for _, nprop := range prop.NestedProperties {
+			migrateNestedPropertiesIfNecessary(nprop)
+		}
+	}
+}
+
+func migrateNestedPropertiesIfNecessary(nprop *models.NestedProperty) {
+	// migrate this nested property
+	nprop.IndexRangeFilters = func() *bool { f := false; return &f }()
+	// Recurse on all nested properties this one has
+	for _, recurseNestedProperty := range nprop.NestedProperties {
+		migrateNestedPropertiesIfNecessary(recurseNestedProperty)
 	}
 }

@@ -40,7 +40,7 @@ type BigramModule struct {
 	vectors                      map[string][]float32
 	storageProvider              moduletools.StorageProvider
 	GraphqlProvider              modulecapabilities.GraphQLArguments
-	Searcher                     modulecapabilities.Searcher
+	Searcher                     modulecapabilities.Searcher[[]float32]
 	NearTextTransformer          modulecapabilities.TextTransform
 	logger                       logrus.FieldLogger
 	AdditionalPropertiesProvider modulecapabilities.AdditionalProperties
@@ -122,23 +122,26 @@ func ord(letter rune) int {
 	return int(letter)
 }
 
-func stripNonAlphabets(input string) string {
+func stripNonAlphabets(input string) (string, error) {
 	reg, err := regexp.Compile("[^a-zA-Z]+")
 	if err != nil {
-		fmt.Println("Error compiling regex:", err)
+		return "", err
 	}
-	return reg.ReplaceAllString(input, "")
+	return reg.ReplaceAllString(input, ""), nil
 }
 
 func alphabet2Vector(input string) ([]float32, error) {
-	// Strip everything out of the input that is not a letter
+	// Strip everything out of the in that is not a letter
 	// and convert to lower case
-	input = stripNonAlphabets(input)
-	input = strings.ToLower(input)
+	in, err := stripNonAlphabets(input)
+	if err != nil {
+		return nil, err
+	}
+	in = strings.ToLower(in)
 	vector := make([]float32, 26*26)
-	for i := 0; i < len(input)-1; i++ {
-		first := alphabetOrdinal(rune(input[i]))
-		second := alphabetOrdinal(rune(input[i+1]))
+	for i := 0; i < len(in)-1; i++ {
+		first := alphabetOrdinal(rune(in[i]))
+		second := alphabetOrdinal(rune(in[i+1]))
 		index := first*26 + second
 		vector[index] = vector[index] + 1
 	}
@@ -233,7 +236,7 @@ func (m *BigramModule) AddVector(text string, vector []float32) error {
 	return nil
 }
 
-func (m *BigramModule) VectorFromParams(ctx context.Context, params interface{}, className string, findVectorFn modulecapabilities.FindVectorFn, cfg moduletools.ClassConfig) ([]float32, error) {
+func (m *BigramModule) VectorFromParams(ctx context.Context, params interface{}, className string, findVectorFn modulecapabilities.FindVectorFn[[]float32], cfg moduletools.ClassConfig) ([]float32, error) {
 	switch thing := params.(type) {
 	case *nearText.NearTextParams:
 		return m.Texts(ctx, params.(*nearText.NearTextParams).Values, cfg)
@@ -242,10 +245,10 @@ func (m *BigramModule) VectorFromParams(ctx context.Context, params interface{},
 	}
 }
 
-func (m *BigramModule) VectorSearches() map[string]modulecapabilities.VectorForParams {
-	vectorSearches := map[string]modulecapabilities.VectorForParams{}
+func (m *BigramModule) VectorSearches() map[string]modulecapabilities.VectorForParams[[]float32] {
+	vectorSearches := map[string]modulecapabilities.VectorForParams[[]float32]{}
 
-	vectorSearches["nearText"] = m.VectorFromParams
+	vectorSearches["nearText"] = &vectorForParams{m.VectorFromParams}
 	return vectorSearches
 }
 
@@ -281,9 +284,9 @@ func (m *BigramModule) VectorizeBatch(ctx context.Context, objs []*models.Object
 
 var (
 	_ = modulecapabilities.Module(New())
-	_ = modulecapabilities.Vectorizer(New())
+	_ = modulecapabilities.Vectorizer[[]float32](New())
 	_ = modulecapabilities.MetaProvider(New())
-	_ = modulecapabilities.Searcher(New())
+	_ = modulecapabilities.Searcher[[]float32](New())
 )
 
 func (m *BigramModule) ClassConfigDefaults() map[string]interface{} {
@@ -304,3 +307,18 @@ func (m *BigramModule) ValidateClass(ctx context.Context, class *models.Class, c
 }
 
 var _ = modulecapabilities.ClassConfigurator(New())
+
+type vectorForParams struct {
+	fn func(ctx context.Context,
+		params interface{}, className string,
+		findVectorFn modulecapabilities.FindVectorFn[[]float32],
+		cfg moduletools.ClassConfig,
+	) ([]float32, error)
+}
+
+func (v *vectorForParams) VectorForParams(ctx context.Context, params interface{}, className string,
+	findVectorFn modulecapabilities.FindVectorFn[[]float32],
+	cfg moduletools.ClassConfig,
+) ([]float32, error) {
+	return v.fn(ctx, params, className, findVectorFn, cfg)
+}

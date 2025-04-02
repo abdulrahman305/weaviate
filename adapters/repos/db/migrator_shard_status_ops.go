@@ -19,13 +19,14 @@ import (
 	"sync"
 
 	"github.com/sirupsen/logrus"
+
 	command "github.com/weaviate/weaviate/cluster/proto/api"
 	"github.com/weaviate/weaviate/entities/errorcompounder"
 	enterrors "github.com/weaviate/weaviate/entities/errors"
 	"github.com/weaviate/weaviate/entities/models"
 )
 
-func (m *Migrator) frozen(idx *Index, frozen []string, ec *errorcompounder.SafeErrorCompounder) {
+func (m *Migrator) frozen(ctx context.Context, idx *Index, frozen []string, ec *errorcompounder.SafeErrorCompounder) {
 	if m.cluster == nil {
 		ec.Add(fmt.Errorf("no cluster exists in the migrator"))
 		return
@@ -40,7 +41,7 @@ func (m *Migrator) frozen(idx *Index, frozen []string, ec *errorcompounder.SafeE
 	for _, name := range frozen {
 		name := name
 		eg.Go(func() error {
-			shard, release, err := idx.getLocalShardNoShutdown(name)
+			shard, release, err := idx.getOrInitShard(ctx, name)
 			if err != nil {
 				ec.Add(err)
 				return nil
@@ -101,7 +102,7 @@ func (m *Migrator) freeze(ctx context.Context, idx *Index, class string, freeze 
 		uidx := uidx
 		eg.Go(func() error {
 			originalStatus := models.TenantActivityStatusHOT
-			shard, release, err := idx.getLocalShardNoShutdown(name)
+			shard, release, err := idx.getOrInitShard(ctx, name)
 			if err != nil {
 				m.logger.WithFields(logrus.Fields{
 					"action": "get_local_shard_no_shutdown",
@@ -131,7 +132,7 @@ func (m *Migrator) freeze(ctx context.Context, idx *Index, class string, freeze 
 			defer idx.shardCreateLocks.Unlock(name)
 
 			if shard != nil {
-				if err := shard.HaltForTransfer(ctx); err != nil {
+				if err := shard.HaltForTransfer(ctx, true); err != nil {
 					m.logger.WithFields(logrus.Fields{
 						"action": "halt_for_transfer",
 						"error":  err,
@@ -152,7 +153,7 @@ func (m *Migrator) freeze(ctx context.Context, idx *Index, class string, freeze 
 
 			if err := m.cloud.Upload(ctx, class, name, m.nodeId); err != nil {
 				m.logger.WithFields(logrus.Fields{
-					"action": "upload_tenant_from_cloud",
+					"action": "upload_tenant_to_cloud",
 					"error":  err,
 					"name":   class,
 					"tenant": name,

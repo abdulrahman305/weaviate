@@ -12,7 +12,9 @@
 package helpers
 
 import (
+	"context"
 	"fmt"
+	"maps"
 	"os"
 	"strconv"
 	"time"
@@ -27,7 +29,7 @@ const (
 )
 
 type SlowQueryReporter interface {
-	LogIfSlow(time.Time, map[string]any)
+	LogIfSlow(context.Context, time.Time, map[string]any)
 }
 
 type BaseSlowReporter struct {
@@ -36,16 +38,10 @@ type BaseSlowReporter struct {
 }
 
 func NewSlowQueryReporterFromEnv(logger logrus.FieldLogger) SlowQueryReporter {
-	if logger == nil {
-		fmt.Println("Unexpected nil logger for SlowQueryReporter. Reporter disabled.")
-		return &NoopSlowReporter{}
-	}
-
 	enabled := false
 	if enabledStr, ok := os.LookupEnv(enabledEnvVar); ok {
 		// TODO: Log warning if bool can't be parsed
 		enabled, _ = strconv.ParseBool(enabledStr)
-		fmt.Println("en", enabledStr, enabled)
 	}
 	if !enabled {
 		return &NoopSlowReporter{}
@@ -81,11 +77,16 @@ func NewSlowQueryReporter(threshold time.Duration, logger logrus.FieldLogger) *B
 //
 // TODO (sebneira): Consider providing fields out of the box (e.g. shard info). Right now we're
 // limited because of circular dependencies.
-func (sq *BaseSlowReporter) LogIfSlow(startTime time.Time, fields map[string]any) {
+func (sq *BaseSlowReporter) LogIfSlow(ctx context.Context, startTime time.Time, fields map[string]any) {
 	took := time.Since(startTime)
 	if took > sq.threshold {
 		if fields == nil {
 			fields = map[string]any{}
+		}
+
+		detailFields := ExtractSlowQueryDetails(ctx)
+		if detailFields != nil {
+			maps.Copy(fields, detailFields)
 		}
 		fields["took"] = took
 		sq.logger.WithFields(fields).Warn(fmt.Sprintf("Slow query detected (%s)", took.Round(time.Millisecond)))
@@ -95,5 +96,5 @@ func (sq *BaseSlowReporter) LogIfSlow(startTime time.Time, fields map[string]any
 // NoopSlowReporter is used when the reporter is disabled.
 type NoopSlowReporter struct{}
 
-func (sq *NoopSlowReporter) LogIfSlow(startTime time.Time, fields map[string]any) {
+func (sq *NoopSlowReporter) LogIfSlow(ctx context.Context, startTime time.Time, fields map[string]any) {
 }

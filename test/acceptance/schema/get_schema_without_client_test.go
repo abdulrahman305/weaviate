@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaviate/weaviate/entities/vectorindex/hnsw"
 	"github.com/weaviate/weaviate/test/helper"
+	"github.com/weaviate/weaviate/usecases/config"
 )
 
 func testGetSchemaWithoutClient(t *testing.T) {
@@ -70,6 +71,10 @@ func testGetSchemaWithoutClient(t *testing.T) {
 						"rescoreLimit":  float64(20),
 					},
 					"filterStrategy": "sweeping",
+					"multivector": map[string]interface{}{
+						"enabled":     false,
+						"aggregation": "maxSim",
+					},
 				},
 				"shardingConfig": map[string]interface{}{
 					"actualCount":         float64(1),
@@ -84,7 +89,7 @@ func testGetSchemaWithoutClient(t *testing.T) {
 				"replicationConfig": map[string]interface{}{
 					"asyncEnabled":     false,
 					"factor":           float64(1),
-					"deletionStrategy": "DeleteOnConflict",
+					"deletionStrategy": "NoAutomatedResolution",
 				},
 				"vectorizer": "text2vec-contextionary", // global default from env var, see docker-compose-test.yml
 				"invertedIndexConfig": map[string]interface{}{
@@ -98,6 +103,7 @@ func testGetSchemaWithoutClient(t *testing.T) {
 						"additions": nil,
 						"removals":  nil,
 					},
+					"usingBlockMaxWAND": config.DefaultUsingBlockMaxWAND,
 				},
 				"moduleConfig": map[string]interface{}{
 					"text2vec-contextionary": map[string]interface{}{

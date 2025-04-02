@@ -13,6 +13,7 @@ package hnsw
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"math"
 	"os"
@@ -95,11 +96,41 @@ func (h *hnsw) Delete(ids ...uint64) error {
 	return nil
 }
 
+func (h *hnsw) DeleteMulti(docIDs ...uint64) error {
+	before := time.Now()
+	defer h.metrics.TrackDelete(before, "total")
+
+	for _, docID := range docIDs {
+		h.RLock()
+		vecIDs := h.docIDVectors[docID]
+		h.RUnlock()
+
+		for _, id := range vecIDs {
+			if err := h.Delete(id); err != nil {
+				return err
+			}
+			idBytes := make([]byte, 8)
+			binary.BigEndian.PutUint64(idBytes, id)
+			if err := h.store.Bucket(h.id + "_mv_mappings").Delete(idBytes); err != nil {
+				return errors.Wrap(err, fmt.Sprintf("failed to delete %s_mv_mappings from the bucket", h.id))
+			}
+		}
+		h.Lock()
+		delete(h.docIDVectors, docID)
+		h.Unlock()
+
+	}
+
+	return nil
+}
+
 func (h *hnsw) resetIfEmpty() (empty bool, err error) {
 	h.resetLock.Lock()
 	defer h.resetLock.Unlock()
 	h.Lock()
 	defer h.Unlock()
+	h.tombstoneLock.Lock()
+	defer h.tombstoneLock.Unlock()
 
 	empty = func() bool {
 		h.shardedNodeLocks.RLock(h.entryPointID)
@@ -124,6 +155,8 @@ func (h *hnsw) resetIfOnlyNode(needle *vertex, denyList helpers.AllowList) (only
 	defer h.resetLock.Unlock()
 	h.Lock()
 	defer h.Unlock()
+	h.tombstoneLock.Lock()
+	defer h.tombstoneLock.Unlock()
 
 	onlyNode = func() bool {
 		h.shardedNodeLocks.RLockAll()
@@ -153,6 +186,7 @@ func (h *hnsw) resetUnlocked() error {
 	h.currentMaximumLayer = 0
 	h.initialInsertOnce = &sync.Once{}
 	h.nodes = make([]*vertex, cache.InitialSize)
+	h.tombstones = make(map[uint64]struct{})
 
 	return h.commitLog.Reset()
 }
@@ -303,12 +337,12 @@ func (h *hnsw) cleanUpTombstonedNodes(shouldAbort cyclemanager.ShouldAbortCallba
 	h.metrics.StartTombstoneCycle()
 
 	executed = true
-	if ok, err := h.reassignNeighborsOf(deleteList, breakCleanUpTombstonedNodes); err != nil {
+	if ok, err := h.reassignNeighborsOf(h.shutdownCtx, deleteList, breakCleanUpTombstonedNodes); err != nil {
 		return executed, err
 	} else if !ok {
 		return executed, nil
 	}
-	h.reassignNeighbor(h.getEntrypoint(), deleteList, breakCleanUpTombstonedNodes)
+	h.reassignNeighbor(h.shutdownCtx, h.getEntrypoint(), deleteList, breakCleanUpTombstonedNodes)
 
 	if ok, err := h.replaceDeletedEntrypoint(deleteList, breakCleanUpTombstonedNodes); err != nil {
 		return executed, err
@@ -407,12 +441,14 @@ func tombstoneDeletionConcurrency() int {
 	return concurrency
 }
 
-func (h *hnsw) reassignNeighborsOf(deleteList helpers.AllowList, breakCleanUpTombstonedNodes breakCleanUpTombstonedNodesFunc) (ok bool, err error) {
+func (h *hnsw) reassignNeighborsOf(ctx context.Context, deleteList helpers.AllowList,
+	breakCleanUpTombstonedNodes breakCleanUpTombstonedNodesFunc,
+) (ok bool, err error) {
 	h.RLock()
 	size := len(h.nodes)
 	h.RUnlock()
 
-	g, ctx := enterrors.NewErrorGroupWithContextWrapper(h.logger, h.shutdownCtx)
+	g, ctx := enterrors.NewErrorGroupWithContextWrapper(h.logger, ctx)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	ch := make(chan uint64)
@@ -441,7 +477,7 @@ func (h *hnsw) reassignNeighborsOf(deleteList helpers.AllowList, breakCleanUpTom
 					h.shardedNodeLocks.RUnlock(deletedID)
 					h.resetLock.RLock()
 					if h.getEntrypoint() != deletedID {
-						if _, err := h.reassignNeighbor(deletedID, deleteList, breakCleanUpTombstonedNodes); err != nil {
+						if _, err := h.reassignNeighbor(ctx, deletedID, deleteList, breakCleanUpTombstonedNodes); err != nil {
 							h.logger.WithError(err).WithField("action", "hnsw_tombstone_cleanup_error").
 								Errorf("class %s: shard %s: reassign neighbor", h.className, h.shardName)
 						}
@@ -496,6 +532,7 @@ LOOP:
 }
 
 func (h *hnsw) reassignNeighbor(
+	ctx context.Context,
 	neighbor uint64,
 	deleteList helpers.AllowList,
 	breakCleanUpTombstonedNodes breakCleanUpTombstonedNodesFunc,
@@ -549,7 +586,7 @@ func (h *hnsw) reassignNeighbor(
 	// the new recursive implementation no longer needs an entrypoint, so we can
 	// just pass this dummy value to make the neighborFinderConnector happy
 	dummyEntrypoint := uint64(0)
-	if err := h.reconnectNeighboursOf(neighborNode, dummyEntrypoint, neighborVec, compressorDistancer,
+	if err := h.reconnectNeighboursOf(ctx, neighborNode, dummyEntrypoint, neighborVec, compressorDistancer,
 		neighborLevel, currentMaximumLayer, deleteList); err != nil {
 		return false, errors.Wrap(err, "find and connect neighbors")
 	}
@@ -757,6 +794,19 @@ func (h *hnsw) hasTombstone(id uint64) bool {
 	defer h.tombstoneLock.RUnlock()
 	_, ok := h.tombstones[id]
 	return ok
+}
+
+// hasTombstones checks whether at least one node of the provided ids has a tombstone attached.
+func (h *hnsw) hasTombstones(ids []uint64) bool {
+	h.tombstoneLock.RLock()
+	defer h.tombstoneLock.RUnlock()
+
+	var has bool
+	for _, id := range ids {
+		_, ok := h.tombstones[id]
+		has = has || ok
+	}
+	return has
 }
 
 func (h *hnsw) addTombstone(ids ...uint64) error {

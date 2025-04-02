@@ -12,14 +12,17 @@
 package companies
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/go-openapi/strfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/weaviate/weaviate/client/batch"
 	"github.com/weaviate/weaviate/entities/models"
 	"github.com/weaviate/weaviate/entities/schema"
+	"github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"github.com/weaviate/weaviate/test/helper"
 	graphqlhelper "github.com/weaviate/weaviate/test/helper/graphql"
 )
@@ -90,6 +93,61 @@ func InsertObjects(t *testing.T, host string, className string) {
 	}
 }
 
+func BatchInsertObjects(t *testing.T, host string, className string) {
+	var objects []*models.Object
+	for _, company := range Companies {
+		objects = append(objects, &models.Object{
+			Class: className,
+			ID:    company.ID,
+			Properties: map[string]interface{}{
+				"name":        company.Name,
+				"description": company.Description,
+			},
+		})
+	}
+	helper.SetupClient(host)
+
+	returnedFields := "ALL"
+	params := batch.NewBatchObjectsCreateParams().WithBody(
+		batch.BatchObjectsCreateBody{
+			Objects: objects,
+			Fields:  []*string{&returnedFields},
+		})
+
+	resp, err := helper.BatchClient(t).BatchObjectsCreate(params, nil)
+
+	// ensure that the response is OK
+	helper.AssertRequestOk(t, resp, err, func() {
+		objectsCreateResponse := resp.Payload
+
+		// check if the batch response contains two batched responses
+		assert.Equal(t, 2, len(objectsCreateResponse))
+
+		for _, elem := range resp.Payload {
+			assert.Nil(t, elem.Result.Errors)
+		}
+	})
+}
+
+func PerformAllSearchTests(t *testing.T, rest, grpc string, className string) {
+	// vector search with gql
+	t.Run("perform vector search with gql", func(t *testing.T) {
+		PerformVectorSearchTest(t, rest, className)
+	})
+	// vector search with grpc
+	t.Run("perform vector search with grpc", func(t *testing.T) {
+		PerformVectorSearchGRPCTest(t, grpc, className)
+	})
+	// hybrid search with gql
+	t.Run("perform hybrid search with gql", func(t *testing.T) {
+		PerformHybridSearchTest(t, rest, className)
+	})
+	// hybrid search with grpc
+	t.Run("perform hybrid search with grpc", func(t *testing.T) {
+		PerformHybridSearchGRPCTest(t, grpc, className)
+	})
+}
+
 func PerformVectorSearchTest(t *testing.T, host string, className string) {
 	query := fmt.Sprintf(`
 				{
@@ -107,6 +165,66 @@ func PerformVectorSearchTest(t *testing.T, host string, className string) {
 					}
 				}
 			`, className)
+	assertResults(t, host, className, query)
+}
+
+func PerformVectorSearchGRPCTest(t *testing.T, host string, className string) {
+	req := protocol.SearchRequest{
+		Collection: className,
+		NearText: &protocol.NearTextSearch{
+			Query: []string{"SpaceX"},
+		},
+		Properties: &protocol.PropertiesRequest{
+			NonRefProperties: []string{"name"},
+		},
+		Metadata: &protocol.MetadataRequest{
+			Uuid: true,
+		},
+		Uses_127Api: true,
+	}
+	assertResultsGRPC(t, host, &req)
+}
+
+func PerformHybridSearchTest(t *testing.T, host string, className string) {
+	query := fmt.Sprintf(`
+				{
+					Get {
+						%s(
+							hybrid:{
+								query:"SpaceX"
+								alpha:0.75
+							}
+						){
+							name
+							_additional {
+								id
+							}
+						}
+					}
+				}
+			`, className)
+	assertResults(t, host, className, query)
+}
+
+func PerformHybridSearchGRPCTest(t *testing.T, host string, className string) {
+	req := protocol.SearchRequest{
+		Collection: className,
+		HybridSearch: &protocol.Hybrid{
+			Query: "SpaceX",
+			Alpha: 0.75,
+		},
+		Properties: &protocol.PropertiesRequest{
+			NonRefProperties: []string{"name"},
+		},
+		Metadata: &protocol.MetadataRequest{
+			Uuid: true,
+		},
+		Uses_127Api: true,
+	}
+	assertResultsGRPC(t, host, &req)
+}
+
+func assertResults(t *testing.T, host string, className, query string) {
 	helper.SetupClient(host)
 	result := graphqlhelper.AssertGraphQL(t, helper.RootAuth, query)
 	objs := result.Get("Get", className).AsSlice()
@@ -120,5 +238,19 @@ func PerformVectorSearchTest(t *testing.T, host string, className string) {
 		id, ok := additional["id"].(string)
 		require.True(t, ok)
 		require.NotEmpty(t, id)
+	}
+}
+
+func assertResultsGRPC(t *testing.T, host string, req *protocol.SearchRequest) {
+	helper.SetupGRPCClient(t, host)
+	client := helper.ClientGRPC(t)
+	resp, err := client.Search(context.Background(), req)
+	if err != nil {
+		t.Fatalf("search request failed: %v", err)
+	}
+	require.Len(t, resp.Results, 2)
+	for _, res := range resp.Results {
+		assert.NotEmpty(t, res.GetProperties().GetNonRefProps().GetFields()["name"].GetTextValue())
+		assert.NotEmpty(t, res.GetMetadata().GetId())
 	}
 }

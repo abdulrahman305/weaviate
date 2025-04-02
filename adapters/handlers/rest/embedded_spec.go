@@ -41,20 +41,21 @@ func init() {
   ],
   "swagger": "2.0",
   "info": {
-    "description": "Cloud-native, modular vector database",
+    "description": "# Introduction\n Weaviate is an open source, AI-native vector database that helps developers create intuitive and reliable AI-powered applications. \n ### Base Path \nThe base path for the Weaviate server is structured as ` + "`" + `[YOUR-WEAVIATE-HOST]:[PORT]/v1` + "`" + `. As an example, if you wish to access the ` + "`" + `schema` + "`" + ` endpoint on a local instance, you would navigate to ` + "`" + `http://localhost:8080/v1/schema` + "`" + `. Ensure you replace ` + "`" + `[YOUR-WEAVIATE-HOST]` + "`" + ` and ` + "`" + `[PORT]` + "`" + ` with your actual server host and port number respectively. \n ### Questions? \nIf you have any comments or questions, please feel free to reach out to us at the community forum [https://forum.weaviate.io/](https://forum.weaviate.io/). \n### Issues? \nIf you find a bug or want to file a feature request, please open an issue on our GitHub repository for [Weaviate](https://github.com/weaviate/weaviate). \n### Want more documentation? \nFor a quickstart, code examples, concepts and more, please visit our [documentation page](https://weaviate.io/developers/weaviate).",
     "title": "Weaviate",
     "contact": {
       "name": "Weaviate",
       "url": "https://github.com/weaviate",
       "email": "hello@weaviate.io"
     },
-    "version": "1.27.0"
+    "version": "1.31.0-dev"
   },
   "basePath": "/v1",
   "paths": {
     "/": {
       "get": {
-        "description": "Home. Discover the REST API",
+        "description": "Get links to other endpoints to help discover the REST API",
+        "summary": "List available endpoints",
         "operationId": "weaviate.root",
         "responses": {
           "200": {
@@ -77,6 +78,7 @@ func init() {
     "/.well-known/live": {
       "get": {
         "description": "Determines whether the application is alive. Can be used for kubernetes liveness probe",
+        "summary": "Get application liveness.",
         "operationId": "weaviate.wellknown.liveness",
         "responses": {
           "200": {
@@ -136,6 +138,7 @@ func init() {
     "/.well-known/ready": {
       "get": {
         "description": "Determines whether the application is ready to receive traffic. Can be used for kubernetes readiness probe.",
+        "summary": "Get application readiness.",
         "operationId": "weaviate.wellknown.readiness",
         "responses": {
           "200": {
@@ -147,12 +150,969 @@ func init() {
         }
       }
     },
+    "/authz/groups/{id}/assign": {
+      "post": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Assign a role to a group",
+        "operationId": "assignRoleToGroup",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "group name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "roles": {
+                  "description": "the roles that assigned to group",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role assigned successfully"
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "role or group is not found."
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.assign.role"
+        ]
+      }
+    },
+    "/authz/groups/{id}/revoke": {
+      "post": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Revoke a role from a group",
+        "operationId": "revokeRoleFromGroup",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "group name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "roles": {
+                  "description": "the roles that revoked from group",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role revoked successfully"
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "role or group is not found."
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.revoke.role.group"
+        ]
+      }
+    },
+    "/authz/roles": {
+      "get": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Get all roles",
+        "operationId": "getRoles",
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "schema": {
+              "$ref": "#/definitions/RolesListResponse"
+            }
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.get.roles"
+        ]
+      },
+      "post": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "create new role",
+        "operationId": "createRole",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Role"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Role created successfully"
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "409": {
+            "description": "Role already exists",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous. Are you sure the class is defined in the configuration file?",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.create.role"
+        ]
+      }
+    },
+    "/authz/roles/{id}": {
+      "get": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Get a role",
+        "operationId": "getRole",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "role name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "schema": {
+              "$ref": "#/definitions/Role"
+            }
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "no role found"
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.get.role"
+        ]
+      },
+      "delete": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Delete role",
+        "operationId": "deleteRole",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "role name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successfully deleted."
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.delete.role"
+        ]
+      }
+    },
+    "/authz/roles/{id}/add-permissions": {
+      "post": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Add permission to a given role.",
+        "operationId": "addPermissions",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "role name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "name",
+                "permissions"
+              ],
+              "properties": {
+                "permissions": {
+                  "description": "permissions to be added to the role",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/Permission"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Permissions added successfully"
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "no role found"
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous. Are you sure the class is defined in the configuration file?",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.add.role.permissions"
+        ]
+      }
+    },
+    "/authz/roles/{id}/has-permission": {
+      "post": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Check whether role possesses this permission.",
+        "operationId": "hasPermission",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "role name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Permission"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Permission check was successful",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous. Are you sure the class is defined in the configuration file?",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.has.role.permission"
+        ]
+      }
+    },
+    "/authz/roles/{id}/remove-permissions": {
+      "post": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Remove permissions from a role. If this results in an empty role, the role will be deleted.",
+        "operationId": "removePermissions",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "role name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "permissions"
+              ],
+              "properties": {
+                "permissions": {
+                  "description": "permissions to remove from the role",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/Permission"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Permissions removed successfully"
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "no role found"
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous. Are you sure the class is defined in the configuration file?",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.remove.role.permissions"
+        ]
+      }
+    },
+    "/authz/roles/{id}/user-assignments": {
+      "get": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "get users assigned to role",
+        "operationId": "getUsersForRole",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "role name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Users assigned to this role",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "userType"
+                ],
+                "properties": {
+                  "userId": {
+                    "type": "string"
+                  },
+                  "userType": {
+                    "$ref": "#/definitions/UserTypeOutput"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "no role found"
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.get.roles.users"
+        ]
+      }
+    },
+    "/authz/roles/{id}/users": {
+      "get": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "get users (db + OIDC) assigned to role. Deprecated, will be removed when 1.29 is not supported anymore",
+        "operationId": "getUsersForRoleDeprecated",
+        "deprecated": true,
+        "parameters": [
+          {
+            "type": "string",
+            "description": "role name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Users assigned to this role",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "no role found"
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.get.roles.users"
+        ]
+      }
+    },
+    "/authz/users/{id}/assign": {
+      "post": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Assign a role to a user",
+        "operationId": "assignRoleToUser",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "roles": {
+                  "description": "the roles that assigned to user",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "userType": {
+                  "$ref": "#/definitions/UserTypeInput"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role assigned successfully"
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "role or user is not found.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.assign.role.user"
+        ]
+      }
+    },
+    "/authz/users/{id}/revoke": {
+      "post": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Revoke a role from a user",
+        "operationId": "revokeRoleFromUser",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "roles": {
+                  "description": "the roles that revoked from the key or user",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "userType": {
+                  "$ref": "#/definitions/UserTypeInput"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role revoked successfully"
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "role or user is not found.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.revoke.role.user"
+        ]
+      }
+    },
+    "/authz/users/{id}/roles": {
+      "get": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "get roles assigned to user (DB + OIDC). Deprecated, will be removed when 1.29 is not supported anymore",
+        "operationId": "getRolesForUserDeprecated",
+        "deprecated": true,
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role assigned users",
+            "schema": {
+              "$ref": "#/definitions/RolesListResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "no role found for user"
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous. Are you sure the class is defined in the configuration file?",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.get.users.roles"
+        ]
+      }
+    },
+    "/authz/users/{id}/roles/{userType}": {
+      "get": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "get roles assigned to user",
+        "operationId": "getRolesForUser",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "enum": [
+              "oidc",
+              "db"
+            ],
+            "type": "string",
+            "description": "The type of user",
+            "name": "userType",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to include detailed role information needed the roles permission",
+            "name": "includeFullRoles",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role assigned users",
+            "schema": {
+              "$ref": "#/definitions/RolesListResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "no role found for user"
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous. Are you sure the class is defined in the configuration file?",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.get.users.roles"
+        ]
+      }
+    },
     "/backups/{backend}": {
       "get": {
         "description": "[Coming soon] List all backups in progress not implemented yet.",
         "tags": [
           "backups"
         ],
+        "summary": "List backups in progress",
         "operationId": "backups.list",
         "parameters": [
           {
@@ -197,15 +1157,16 @@ func init() {
         ]
       },
       "post": {
-        "description": "Starts a process of creating a backup for a set of classes",
+        "description": "Start creating a backup for a set of collections. \u003cbr/\u003e\u003cbr/\u003eNotes: \u003cbr/\u003e- Weaviate uses gzip compression by default. \u003cbr/\u003e- Weaviate stays usable while a backup process is ongoing.",
         "tags": [
           "backups"
         ],
+        "summary": "Start a backup process",
         "operationId": "backups.create",
         "parameters": [
           {
             "type": "string",
-            "description": "Backup backend name e.g. filesystem, gcs, s3.",
+            "description": "Backup backend name e.g. ` + "`" + `filesystem` + "`" + `, ` + "`" + `gcs` + "`" + `, ` + "`" + `s3` + "`" + `, ` + "`" + `azure` + "`" + `.",
             "name": "backend",
             "in": "path",
             "required": true
@@ -255,10 +1216,11 @@ func init() {
     },
     "/backups/{backend}/{id}": {
       "get": {
-        "description": "Returns status of backup creation attempt for a set of classes",
+        "description": "Returns status of backup creation attempt for a set of collections. \u003cbr/\u003e\u003cbr/\u003eAll client implementations have a ` + "`" + `wait for completion` + "`" + ` option which will poll the backup status in the background and only return once the backup has completed (successfully or unsuccessfully). If you set the ` + "`" + `wait for completion` + "`" + ` option to false, you can also check the status yourself using this endpoint.",
         "tags": [
           "backups"
         ],
+        "summary": "Get backup process status",
         "operationId": "backups.create.status",
         "parameters": [
           {
@@ -274,6 +1236,18 @@ func init() {
             "name": "id",
             "in": "path",
             "required": true
+          },
+          {
+            "type": "string",
+            "description": "Name of the bucket, container, volume, etc",
+            "name": "bucket",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "The path within the bucket",
+            "name": "path",
+            "in": "query"
           }
         ],
         "responses": {
@@ -320,6 +1294,7 @@ func init() {
         "tags": [
           "backups"
         ],
+        "summary": "Cancel backup",
         "operationId": "backups.cancel",
         "parameters": [
           {
@@ -335,6 +1310,18 @@ func init() {
             "name": "id",
             "in": "path",
             "required": true
+          },
+          {
+            "type": "string",
+            "description": "Name of the bucket, container, volume, etc",
+            "name": "bucket",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "The path within the bucket",
+            "name": "path",
+            "in": "query"
           }
         ],
         "responses": {
@@ -370,15 +1357,16 @@ func init() {
     },
     "/backups/{backend}/{id}/restore": {
       "get": {
-        "description": "Returns status of a backup restoration attempt for a set of classes",
+        "description": "Returns status of a backup restoration attempt for a set of classes. \u003cbr/\u003e\u003cbr/\u003eAll client implementations have a ` + "`" + `wait for completion` + "`" + ` option which will poll the backup status in the background and only return once the backup has completed (successfully or unsuccessfully). If you set the ` + "`" + `wait for completion` + "`" + ` option to false, you can also check the status yourself using the this endpoint.",
         "tags": [
           "backups"
         ],
+        "summary": "Get restore process status",
         "operationId": "backups.restore.status",
         "parameters": [
           {
             "type": "string",
-            "description": "Backup backend name e.g. filesystem, gcs, s3.",
+            "description": "Backup backend name e.g. ` + "`" + `filesystem` + "`" + `, ` + "`" + `gcs` + "`" + `, ` + "`" + `s3` + "`" + `, ` + "`" + `azure` + "`" + `.",
             "name": "backend",
             "in": "path",
             "required": true
@@ -389,6 +1377,18 @@ func init() {
             "name": "id",
             "in": "path",
             "required": true
+          },
+          {
+            "type": "string",
+            "description": "Name of the bucket, container, volume, etc",
+            "name": "bucket",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "The path within the bucket",
+            "name": "path",
+            "in": "query"
           }
         ],
         "responses": {
@@ -425,15 +1425,16 @@ func init() {
         ]
       },
       "post": {
-        "description": "Starts a process of restoring a backup for a set of classes",
+        "description": "Starts a process of restoring a backup for a set of collections. \u003cbr/\u003e\u003cbr/\u003eAny backup can be restored to any machine, as long as the number of nodes between source and target are identical.\u003cbr/\u003e\u003cbr/\u003eRequrements:\u003cbr/\u003e\u003cbr/\u003e- None of the collections to be restored already exist on the target restoration node(s).\u003cbr/\u003e- The node names of the backed-up collections' must match those of the target restoration node(s).",
         "tags": [
           "backups"
         ],
+        "summary": "Start a restoration process",
         "operationId": "backups.restore",
         "parameters": [
           {
             "type": "string",
-            "description": "Backup backend name e.g. filesystem, gcs, s3.",
+            "description": "Backup backend name e.g. ` + "`" + `filesystem` + "`" + `, ` + "`" + `gcs` + "`" + `, ` + "`" + `s3` + "`" + `, ` + "`" + `azure` + "`" + `.",
             "name": "backend",
             "in": "path",
             "required": true
@@ -496,7 +1497,7 @@ func init() {
     },
     "/batch/objects": {
       "post": {
-        "description": "Register new Objects in bulk. Provided meta-data and schema values are validated.",
+        "description": "Create new objects in bulk. \u003cbr/\u003e\u003cbr/\u003eMeta-data and schema values are validated. \u003cbr/\u003e\u003cbr/\u003e**Note: idempotence of ` + "`" + `/batch/objects` + "`" + `**: \u003cbr/\u003e` + "`" + `POST /batch/objects` + "`" + ` is idempotent, and will overwrite any existing object given the same id.",
         "tags": [
           "batch",
           "objects"
@@ -584,7 +1585,7 @@ func init() {
         ]
       },
       "delete": {
-        "description": "Delete Objects in bulk that match a certain filter.",
+        "description": "Batch delete objects that match a particular filter. \u003cbr/\u003e\u003cbr/\u003eThe request body takes a single ` + "`" + `where` + "`" + ` filter and will delete all objects matched. \u003cbr/\u003e\u003cbr/\u003eNote that there is a limit to the number of objects to be deleted at once using this filter, in order to protect against unexpected memory surges and very-long-running requests. The default limit is 10,000 and may be configured by setting the ` + "`" + `QUERY_MAXIMUM_RESULTS` + "`" + ` environment variable. \u003cbr/\u003e\u003cbr/\u003eObjects are deleted in the same order that they would be returned in an equivalent Get query. To delete more objects than the limit, run the same query multiple times.",
         "tags": [
           "batch",
           "objects"
@@ -651,7 +1652,7 @@ func init() {
     },
     "/batch/references": {
       "post": {
-        "description": "Register cross-references between any class items (objects or objects) in bulk.",
+        "description": "Batch create cross-references between collections items (objects or objects) in bulk.",
         "tags": [
           "batch",
           "references"
@@ -827,6 +1828,7 @@ func init() {
         "tags": [
           "cluster"
         ],
+        "summary": "See Raft cluster statistics",
         "operationId": "cluster.get.statistics",
         "responses": {
           "200": {
@@ -864,7 +1866,7 @@ func init() {
     },
     "/graphql": {
       "post": {
-        "description": "Get an object based on GraphQL",
+        "description": "Get a response based on a GraphQL query",
         "tags": [
           "graphql"
         ],
@@ -980,7 +1982,7 @@ func init() {
     },
     "/meta": {
       "get": {
-        "description": "Gives meta information about the server and can be used to provide information to another Weaviate instance that wants to interact with the current instance.",
+        "description": "Returns meta information about the server. Can be used to provide information to another Weaviate instance that wants to interact with the current instance.",
         "tags": [
           "meta"
         ],
@@ -1018,10 +2020,11 @@ func init() {
     },
     "/nodes": {
       "get": {
-        "description": "Returns status of Weaviate DB.",
+        "description": "Returns node information for the entire database.",
         "tags": [
           "nodes"
         ],
+        "summary": "Node information for the database.",
         "operationId": "nodes.get",
         "parameters": [
           {
@@ -1070,10 +2073,11 @@ func init() {
     },
     "/nodes/{className}": {
       "get": {
-        "description": "Returns status of Weaviate DB.",
+        "description": "Returns node information for the nodes relevant to the collection.",
         "tags": [
           "nodes"
         ],
+        "summary": "Node information for a collection.",
         "operationId": "nodes.get.class",
         "parameters": [
           {
@@ -1162,7 +2166,7 @@ func init() {
         ],
         "responses": {
           "200": {
-            "description": "Successful response.",
+            "description": "Successful response. \u003cbr/\u003e\u003cbr/\u003eIf ` + "`" + `class` + "`" + ` is not provided, the response will not include any objects.",
             "schema": {
               "$ref": "#/definitions/ObjectsListResponse"
             }
@@ -1205,11 +2209,11 @@ func init() {
         ]
       },
       "post": {
-        "description": "Registers a new Object. Provided meta-data and schema values are validated.",
+        "description": "Create a new object. \u003cbr/\u003e\u003cbr/\u003eMeta-data and schema values are validated. \u003cbr/\u003e\u003cbr/\u003e**Note: Use ` + "`" + `/batch` + "`" + ` for importing many objects**: \u003cbr/\u003eIf you plan on importing a large number of objects, it's much more efficient to use the ` + "`" + `/batch` + "`" + ` endpoint. Otherwise, sending multiple single requests sequentially would incur a large performance penalty. \u003cbr/\u003e\u003cbr/\u003e**Note: idempotence of ` + "`" + `/objects` + "`" + `**: \u003cbr/\u003ePOST /objects will fail if an id is provided which already exists in the class. To update an existing object with the objects endpoint, use the PUT or PATCH method.",
         "tags": [
           "objects"
         ],
-        "summary": "Create Objects between two Objects (object and subject).",
+        "summary": "Create a new object.",
         "operationId": "objects.create",
         "parameters": [
           {
@@ -1268,7 +2272,7 @@ func init() {
     },
     "/objects/validate": {
       "post": {
-        "description": "Validate an Object's schema and meta-data. It has to be based on a schema, which is related to the given Object to be accepted by this validation.",
+        "description": "Validate an object's schema and meta-data without creating it. \u003cbr/\u003e\u003cbr/\u003eIf the schema of the object is valid, the request should return nothing with a plain RESTful request. Otherwise, an error object will be returned.",
         "tags": [
           "objects"
         ],
@@ -1319,7 +2323,7 @@ func init() {
     },
     "/objects/{className}/{id}": {
       "get": {
-        "description": "Get a single data object",
+        "description": "Get a data object based on its collection and UUID. Also available as Websocket bus.",
         "tags": [
           "objects"
         ],
@@ -1398,7 +2402,7 @@ func init() {
         ]
       },
       "put": {
-        "description": "Update an individual data object based on its class and uuid.",
+        "description": "Update an object based on its uuid and collection. This (` + "`" + `put` + "`" + `) method replaces the object with the provided object.",
         "tags": [
           "objects"
         ],
@@ -1470,7 +2474,7 @@ func init() {
         ]
       },
       "delete": {
-        "description": "Delete a single data object.",
+        "description": "Delete an object based on its collection and UUID. \u003cbr/\u003e\u003cbr/\u003eNote: For backward compatibility, beacons also support an older, deprecated format without the collection name. As a result, when deleting a reference, the beacon specified has to match the beacon to be deleted exactly. In other words, if a beacon is present using the old format (without collection name) you also need to specify it the same way. \u003cbr/\u003e\u003cbr/\u003eIn the beacon format, you need to always use ` + "`" + `localhost` + "`" + ` as the host, rather than the actual hostname. ` + "`" + `localhost` + "`" + ` here refers to the fact that the beacon's target is on the same Weaviate instance, as opposed to a foreign instance.",
         "tags": [
           "objects"
         ],
@@ -1540,7 +2544,7 @@ func init() {
         ]
       },
       "head": {
-        "description": "Checks if a data object exists without retrieving it.",
+        "description": "Checks if a data object exists based on its collection and uuid without retrieving it. \u003cbr/\u003e\u003cbr/\u003eInternally it skips reading the object from disk other than checking if it is present. Thus it does not use resources on marshalling, parsing, etc., and is faster. Note the resulting HTTP request has no body; the existence of an object is indicated solely by the status code.",
         "tags": [
           "objects"
         ],
@@ -1683,7 +2687,7 @@ func init() {
     },
     "/objects/{className}/{id}/references/{propertyName}": {
       "put": {
-        "description": "Update all references of a property of a data object.",
+        "description": "Replace **all** references in cross-reference property of an object.",
         "tags": [
           "objects"
         ],
@@ -1769,7 +2773,7 @@ func init() {
         ]
       },
       "post": {
-        "description": "Add a single reference to a class-property.",
+        "description": "Add a single reference to an object. This adds a reference to the array of cross-references of the given property in the source object specified by its collection name and id",
         "tags": [
           "objects"
         ],
@@ -1855,7 +2859,7 @@ func init() {
         ]
       },
       "delete": {
-        "description": "Delete the single reference that is given in the body from the list of references that this property of a data object has",
+        "description": "Delete the single reference that is given in the body from the list of references that this property has.",
         "tags": [
           "objects"
         ],
@@ -1946,7 +2950,7 @@ func init() {
     },
     "/objects/{id}": {
       "get": {
-        "description": "Lists Objects.",
+        "description": "Get a specific object based on its UUID. Also available as Websocket bus.",
         "tags": [
           "objects"
         ],
@@ -2005,7 +3009,7 @@ func init() {
         ]
       },
       "put": {
-        "description": "Updates an Object's data. Given meta-data and schema values are validated. LastUpdateTime is set to the time this function is called.",
+        "description": "Updates an object based on its UUID. Given meta-data and schema values are validated. LastUpdateTime is set to the time this function is called.",
         "tags": [
           "objects"
         ],
@@ -2072,7 +3076,7 @@ func init() {
         ]
       },
       "delete": {
-        "description": "Deletes an Object from the system.",
+        "description": "Deletes an object from the database based on its UUID.",
         "tags": [
           "objects"
         ],
@@ -2125,7 +3129,7 @@ func init() {
         ]
       },
       "head": {
-        "description": "Checks if an Object exists in the system.",
+        "description": "Checks if an object exists in the system based on its UUID.",
         "tags": [
           "objects"
         ],
@@ -2168,11 +3172,11 @@ func init() {
         "x-available-in-mqtt": true,
         "x-available-in-websocket": true,
         "x-serviceIds": [
-          "weaviate.local.manipulate"
+          "weaviate.objects.check"
         ]
       },
       "patch": {
-        "description": "Updates an Object. This method supports json-merge style patch semantics (RFC 7396). Provided meta-data and schema values are validated. LastUpdateTime is set to the time this function is called.",
+        "description": "Update an object based on its UUID (using patch semantics). This method supports json-merge style patch semantics (RFC 7396). Provided meta-data and schema values are validated. LastUpdateTime is set to the time this function is called.",
         "tags": [
           "objects"
         ],
@@ -2241,7 +3245,7 @@ func init() {
     },
     "/objects/{id}/references/{propertyName}": {
       "put": {
-        "description": "Replace all references to a class-property.",
+        "description": "Replace all references in cross-reference property of an object.",
         "tags": [
           "objects"
         ],
@@ -2309,7 +3313,7 @@ func init() {
         ]
       },
       "post": {
-        "description": "Add a single reference to a class-property.",
+        "description": "Add a cross-reference.",
         "tags": [
           "objects"
         ],
@@ -2445,8 +3449,123 @@ func init() {
         ]
       }
     },
+    "/replication/replicate": {
+      "post": {
+        "tags": [
+          "replication"
+        ],
+        "summary": "Start the async operation to replicate a replica between two nodes",
+        "operationId": "replicate",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ReplicationReplicateReplicaRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Replication operation registered successfully"
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.replication.replicate"
+        ]
+      }
+    },
+    "/replication/replicate/{id}": {
+      "get": {
+        "description": "Returns the details of a replication operation for a given shard, identified by the provided replication operation id.",
+        "tags": [
+          "replication"
+        ],
+        "summary": "Get the details of a replication operation.",
+        "operationId": "replicationDetails",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "The replication operation id to get details for.",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The details of the replication operation.",
+            "schema": {
+              "$ref": "#/definitions/ReplicationReplicateDetailsReplicaResponse"
+            }
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Shard replica operation not found"
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "501": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.replication.replicate.details"
+        ]
+      }
+    },
     "/schema": {
       "get": {
+        "description": "Fetch an array of all collection definitions from the schema.",
         "tags": [
           "schema"
         ],
@@ -2489,6 +3608,7 @@ func init() {
         ]
       },
       "post": {
+        "description": "Create a new data object collection. \u003cbr/\u003e\u003cbr/\u003eIf AutoSchema is enabled, Weaviate will attempt to infer the schema from the data at import time. However, manual schema definition is recommended for production environments.",
         "tags": [
           "schema"
         ],
@@ -2591,7 +3711,7 @@ func init() {
         ]
       },
       "put": {
-        "description": "Use this endpoint to alter an existing class in the schema. Note that not all settings are mutable. If an error about immutable fields is returned and you still need to update this particular setting, you will have to delete the class (and the underlying data) and recreate. This endpoint cannot be used to modify properties. Instead use POST /v1/schema/{className}/properties. A typical use case for this endpoint is to update configuration, such as the vectorIndexConfig. Note that even in mutable sections, such as vectorIndexConfig, some fields may be immutable.",
+        "description": "Add a property to an existing collection.",
         "tags": [
           "schema"
         ],
@@ -2653,6 +3773,7 @@ func init() {
         ]
       },
       "delete": {
+        "description": "Remove a collection from the schema. This will also delete all the objects in the collection.",
         "tags": [
           "schema"
         ],
@@ -2756,6 +3877,7 @@ func init() {
     },
     "/schema/{className}/shards": {
       "get": {
+        "description": "Get the status of every shard in the cluster.",
         "tags": [
           "schema"
         ],
@@ -2810,10 +3932,11 @@ func init() {
     },
     "/schema/{className}/shards/{shardName}": {
       "put": {
-        "description": "Update shard status of an Object Class",
+        "description": "Update a shard status for a collection. For example, a shard may have been marked as ` + "`" + `READONLY` + "`" + ` because its disk was full. After providing more disk space, use this endpoint to set the shard status to ` + "`" + `READY` + "`" + ` again. There is also a convenience function in each client to set the status of all shards of a collection.",
         "tags": [
           "schema"
         ],
+        "summary": "Update a shard status.",
         "operationId": "schema.objects.shards.update",
         "parameters": [
           {
@@ -2883,6 +4006,7 @@ func init() {
         "tags": [
           "schema"
         ],
+        "summary": "Get the list of tenants.",
         "operationId": "tenants.get",
         "parameters": [
           {
@@ -2937,6 +4061,7 @@ func init() {
         "tags": [
           "schema"
         ],
+        "summary": "Update a tenant.",
         "operationId": "tenants.update",
         "parameters": [
           {
@@ -2991,10 +4116,11 @@ func init() {
         }
       },
       "post": {
-        "description": "Create a new tenant for a specific class",
+        "description": "Create a new tenant for a collection. Multi-tenancy must be enabled in the collection definition.",
         "tags": [
           "schema"
         ],
+        "summary": "Create a new tenant",
         "operationId": "tenants.create",
         "parameters": [
           {
@@ -3102,11 +4228,73 @@ func init() {
       }
     },
     "/schema/{className}/tenants/{tenantName}": {
+      "get": {
+        "description": "get a specific tenant for the given class",
+        "tags": [
+          "schema"
+        ],
+        "summary": "Get a specific tenant",
+        "operationId": "tenants.get.one",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "className",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "name": "tenantName",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "boolean",
+            "default": true,
+            "description": "If consistency is true, the request will be proxied to the leader to ensure strong schema consistency",
+            "name": "consistency",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "load the tenant given the specified class",
+            "schema": {
+              "$ref": "#/definitions/TenantResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Tenant not found"
+          },
+          "422": {
+            "description": "Invalid tenant or class",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      },
       "head": {
         "description": "Check if a tenant exists for a specific class",
         "tags": [
           "schema"
         ],
+        "summary": "Check whether a tenant exists",
         "operationId": "tenant.exists",
         "parameters": [
           {
@@ -3159,11 +4347,430 @@ func init() {
           }
         }
       }
+    },
+    "/users/db": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "list all db users",
+        "operationId": "listAllUsers",
+        "responses": {
+          "200": {
+            "description": "Info about the user",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/DBUserInfo"
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.users.db.list_all"
+        ]
+      }
+    },
+    "/users/db/{user_id}": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "get info relevant to user, e.g. username, roles",
+        "operationId": "getUserInfo",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user id",
+            "name": "user_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Info about the user",
+            "schema": {
+              "$ref": "#/definitions/DBUserInfo"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "user not found"
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.users.db.get"
+        ]
+      },
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "create new user",
+        "operationId": "createUser",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user id",
+            "name": "user_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "User created successfully",
+            "schema": {
+              "$ref": "#/definitions/UserApiKey"
+            }
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "409": {
+            "description": "User already exists",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.users.db.create"
+        ]
+      },
+      "delete": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Delete User",
+        "operationId": "deleteUser",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user name",
+            "name": "user_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successfully deleted."
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "user not found"
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.users.db.delete"
+        ]
+      }
+    },
+    "/users/db/{user_id}/activate": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "activate a deactivated user",
+        "operationId": "activateUser",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user id",
+            "name": "user_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User successfully activated"
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "user not found"
+          },
+          "409": {
+            "description": "user already activated"
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.users.db.activateUser"
+        ]
+      }
+    },
+    "/users/db/{user_id}/deactivate": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "deactivate a user",
+        "operationId": "deactivateUser",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user id",
+            "name": "user_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "revoke_key": {
+                  "description": "if the key should be revoked when deactivating the user",
+                  "type": "boolean",
+                  "default": false
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "users successfully deactivated"
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "user not found"
+          },
+          "409": {
+            "description": "user already deactivated"
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous. Are you sure the class is defined in the configuration file?",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.users.db.deactivateUser"
+        ]
+      }
+    },
+    "/users/db/{user_id}/rotate-key": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "rotate user api key",
+        "operationId": "rotateUserApiKey",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user id",
+            "name": "user_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ApiKey successfully changed",
+            "schema": {
+              "$ref": "#/definitions/UserApiKey"
+            }
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "user not found"
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.users.db.rotateApiKey"
+        ]
+      }
+    },
+    "/users/own-info": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "get info relevant to own user, e.g. username, roles",
+        "operationId": "getOwnInfo",
+        "responses": {
+          "200": {
+            "description": "Info about the user",
+            "schema": {
+              "$ref": "#/definitions/UserOwnInfo"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.users.get.own-info"
+        ]
+      }
     }
   },
   "definitions": {
     "AdditionalProperties": {
-      "description": "Additional Meta information about a single object object.",
+      "description": "(Response only) Additional meta information about a single object.",
       "type": "object",
       "additionalProperties": {
         "type": "object"
@@ -3174,12 +4781,12 @@ func init() {
       "type": "object",
       "properties": {
         "b": {
-          "description": "calibrates term-weight scaling based on the document length",
+          "description": "Calibrates term-weight scaling based on the document length (default: 0.75).",
           "type": "number",
           "format": "float"
         },
         "k1": {
-          "description": "calibrates term-weight scaling based on the term frequency within a document",
+          "description": "Calibrates term-weight scaling based on the term frequency within a document (default: 1.2).",
           "type": "number",
           "format": "float"
         }
@@ -3189,6 +4796,10 @@ func init() {
       "description": "Backup custom configuration",
       "type": "object",
       "properties": {
+        "Bucket": {
+          "description": "Name of the bucket, container, volume, etc",
+          "type": "string"
+        },
         "CPUPercentage": {
           "description": "Desired CPU core utilization ranging from 1%-80%",
           "type": "integer",
@@ -3198,7 +4809,7 @@ func init() {
           "x-nullable": false
         },
         "ChunkSize": {
-          "description": "Weaviate will attempt to come close the specified size, with a minimum of 2MB, default of 128MB, and a maximum of 512MB",
+          "description": "Aimed chunk size, with a minimum of 2MB, default of 128MB, and a maximum of 512MB. The actual chunk size may vary.",
           "type": "integer",
           "default": 128,
           "maximum": 512,
@@ -3215,6 +4826,14 @@ func init() {
             "BestCompression"
           ],
           "x-nullable": false
+        },
+        "Endpoint": {
+          "description": "name of the endpoint, e.g. s3.amazonaws.com",
+          "type": "string"
+        },
+        "Path": {
+          "description": "Path or key within the bucket",
+          "type": "string"
         }
       }
     },
@@ -3227,18 +4846,18 @@ func init() {
           "$ref": "#/definitions/BackupConfig"
         },
         "exclude": {
-          "description": "List of classes to exclude from the backup creation process",
+          "description": "List of collections to exclude from the backup creation process. If not set, all collections are included. Cannot be used together with ` + "`" + `include` + "`" + `.",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "id": {
-          "description": "The ID of the backup. Must be URL-safe and work as a filesystem path, only lowercase, numbers, underscore, minus characters allowed.",
+          "description": "The ID of the backup (required). Must be URL-safe and work as a filesystem path, only lowercase, numbers, underscore, minus characters allowed.",
           "type": "string"
         },
         "include": {
-          "description": "List of classes to include in the backup creation process",
+          "description": "List of collections to include in the backup creation process. If not set, all collections are included. Cannot be used together with ` + "`" + `exclude` + "`" + `.",
           "type": "array",
           "items": {
             "type": "string"
@@ -3251,6 +4870,10 @@ func init() {
       "properties": {
         "backend": {
           "description": "Backup backend name e.g. filesystem, gcs, s3.",
+          "type": "string"
+        },
+        "bucket": {
+          "description": "Name of the bucket, container, volume, etc",
           "type": "string"
         },
         "classes": {
@@ -3269,7 +4892,7 @@ func init() {
           "type": "string"
         },
         "path": {
-          "description": "destination path of backup files proper to selected backend",
+          "description": "Path within bucket of backup",
           "type": "string"
         },
         "status": {
@@ -3445,7 +5068,7 @@ func init() {
           "type": "string"
         },
         "path": {
-          "description": "destination path of backup files proper to selected backup backend",
+          "description": "destination path of backup files proper to selected backup backend, contains bucket and path",
           "type": "string"
         },
         "status": {
@@ -3466,8 +5089,14 @@ func init() {
     "BatchDelete": {
       "type": "object",
       "properties": {
+        "deletionTimeUnixMilli": {
+          "description": "Timestamp of deletion in milliseconds since epoch UTC.",
+          "type": "integer",
+          "format": "int64",
+          "x-nullable": true
+        },
         "dryRun": {
-          "description": "If true, objects will not be deleted yet, but merely listed. Defaults to false.",
+          "description": "If true, the call will show which objects would be matched using the specified filter without deleting any objects. \u003cbr/\u003e\u003cbr/\u003eDepending on the configured verbosity, you will either receive a count of affected objects, or a list of IDs.",
           "type": "boolean",
           "default": false
         },
@@ -3498,6 +5127,12 @@ func init() {
       "description": "Delete Objects response.",
       "type": "object",
       "properties": {
+        "deletionTimeUnixMilli": {
+          "description": "Timestamp of deletion in milliseconds since epoch UTC.",
+          "type": "integer",
+          "format": "int64",
+          "x-nullable": true
+        },
         "dryRun": {
           "description": "If true, objects will not be deleted yet, but merely listed. Defaults to false.",
           "type": "boolean",
@@ -3622,7 +5257,6 @@ func init() {
                   "default": "SUCCESS",
                   "enum": [
                     "SUCCESS",
-                    "PENDING",
                     "FAILED"
                   ]
                 }
@@ -3686,7 +5320,7 @@ func init() {
       }
     },
     "C11yVector": {
-      "description": "A Vector in the Contextionary",
+      "description": "A vector representation of the object in the Contextionary. If provided at object creation, this wil take precedence over any vectorizer setting.",
       "type": "array",
       "items": {
         "type": "number",
@@ -3790,25 +5424,25 @@ func init() {
       "type": "object",
       "properties": {
         "class": {
-          "description": "Name of the class as URI relative to the schema URL.",
+          "description": "Name of the class (a.k.a. 'collection') (required). Multiple words should be concatenated in CamelCase, e.g. ` + "`" + `ArticleAuthor` + "`" + `.",
           "type": "string"
         },
         "description": {
-          "description": "Description of the class.",
+          "description": "Description of the collection for metadata purposes.",
           "type": "string"
         },
         "invertedIndexConfig": {
           "$ref": "#/definitions/InvertedIndexConfig"
         },
         "moduleConfig": {
-          "description": "Configuration specific to modules this Weaviate instance has installed",
+          "description": "Configuration specific to modules in a collection context.",
           "type": "object"
         },
         "multiTenancyConfig": {
           "$ref": "#/definitions/MultiTenancyConfig"
         },
         "properties": {
-          "description": "The properties of the class.",
+          "description": "Define properties of the collection.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/Property"
@@ -3822,6 +5456,7 @@ func init() {
           "type": "object"
         },
         "vectorConfig": {
+          "description": "Configure named vectors. Either use this field or ` + "`" + `vectorizer` + "`" + `, ` + "`" + `vectorIndexType` + "`" + `, and ` + "`" + `vectorIndexConfig` + "`" + ` fields. Available from ` + "`" + `v1.24.0` + "`" + `.",
           "type": "object",
           "additionalProperties": {
             "$ref": "#/definitions/VectorConfig"
@@ -3973,6 +5608,40 @@ func init() {
         "synchronized": {
           "type": "boolean",
           "x-omitempty": false
+        }
+      }
+    },
+    "DBUserInfo": {
+      "type": "object",
+      "required": [
+        "userId",
+        "dbUserType",
+        "roles",
+        "active"
+      ],
+      "properties": {
+        "active": {
+          "description": "activity status of the returned user",
+          "type": "boolean"
+        },
+        "dbUserType": {
+          "description": "type of the returned user",
+          "type": "string",
+          "enum": [
+            "db_user",
+            "db_env_user"
+          ]
+        },
+        "roles": {
+          "description": "The role names associated to the user",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "userId": {
+          "description": "The user id of the given user",
+          "type": "string"
         }
       }
     },
@@ -4148,7 +5817,7 @@ func init() {
       }
     },
     "InvertedIndexConfig": {
-      "description": "Configure the inverted index built into Weaviate",
+      "description": "Configure the inverted index built into Weaviate (default: 60).",
       "type": "object",
       "properties": {
         "bm25": {
@@ -4160,19 +5829,23 @@ func init() {
           "format": "int"
         },
         "indexNullState": {
-          "description": "Index each object with the null state",
+          "description": "Index each object with the null state (default: 'false').",
           "type": "boolean"
         },
         "indexPropertyLength": {
-          "description": "Index length of properties",
+          "description": "Index length of properties (default: 'false').",
           "type": "boolean"
         },
         "indexTimestamps": {
-          "description": "Index each object by its internal timestamps",
+          "description": "Index each object by its internal timestamps (default: 'false').",
           "type": "boolean"
         },
         "stopwords": {
           "$ref": "#/definitions/StopwordConfig"
+        },
+        "usingBlockMaxWAND": {
+          "description": "Using BlockMax WAND for query execution (default: 'false', will be 'true' for new collections created after 1.30).",
+          "type": "boolean"
         }
       }
     },
@@ -4206,7 +5879,7 @@ func init() {
       "type": "object",
       "properties": {
         "grpcMaxMessageSize": {
-          "description": "Max message size for GRPC connection in bytes",
+          "description": "Max message size for GRPC connection in bytes.",
           "type": "integer"
         },
         "hostname": {
@@ -4215,11 +5888,11 @@ func init() {
           "format": "url"
         },
         "modules": {
-          "description": "Module-specific meta information",
+          "description": "Module-specific meta information.",
           "type": "object"
         },
         "version": {
-          "description": "Version of weaviate you are currently running",
+          "description": "The Weaviate server version.",
           "type": "string"
         }
       }
@@ -4228,17 +5901,17 @@ func init() {
       "description": "Configuration related to multi-tenancy within a class",
       "properties": {
         "autoTenantActivation": {
-          "description": "Existing tenants should (not) be turned HOT implicitly when they are accessed and in another activity status",
+          "description": "Existing tenants should (not) be turned HOT implicitly when they are accessed and in another activity status (default: false).",
           "type": "boolean",
           "x-omitempty": false
         },
         "autoTenantCreation": {
-          "description": "Nonexistent tenants should (not) be created implicitly",
+          "description": "Nonexistent tenants should (not) be created implicitly (default: false).",
           "type": "boolean",
           "x-omitempty": false
         },
         "enabled": {
-          "description": "Whether or not multi-tenancy is enabled for this class",
+          "description": "Whether or not multi-tenancy is enabled for this class (default: false).",
           "type": "boolean",
           "x-omitempty": false
         }
@@ -4279,6 +5952,7 @@ func init() {
           "type": "string"
         },
         "nestedProperties": {
+          "description": "The properties of the nested object(s). Applies to object and object[] data types.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/NestedProperty"
@@ -4291,7 +5965,12 @@ func init() {
             "word",
             "lowercase",
             "whitespace",
-            "field"
+            "field",
+            "trigram",
+            "gse",
+            "kagome_kr",
+            "kagome_ja",
+            "gse_ch"
           ]
         }
       }
@@ -4348,7 +6027,7 @@ func init() {
           "x-omitempty": false
         },
         "shardCount": {
-          "description": "The count of Weaviate's shards.",
+          "description": "The count of Weaviate's shards. To see this value, set ` + "`" + `output` + "`" + ` to ` + "`" + `verbose` + "`" + `.",
           "type": "number",
           "format": "int",
           "x-omitempty": false
@@ -4423,7 +6102,7 @@ func init() {
           "type": "string"
         },
         "creationTimeUnix": {
-          "description": "Timestamp of creation of this Object in milliseconds since epoch UTC.",
+          "description": "(Response only) Timestamp of creation of this object in milliseconds since epoch UTC.",
           "type": "integer",
           "format": "int64"
         },
@@ -4433,7 +6112,7 @@ func init() {
           "format": "uuid"
         },
         "lastUpdateTimeUnix": {
-          "description": "Timestamp of the last Object update in milliseconds since epoch UTC.",
+          "description": "(Response only) Timestamp of the last object update in milliseconds since epoch UTC.",
           "type": "integer",
           "format": "int64"
         },
@@ -4487,7 +6166,6 @@ func init() {
                   "default": "SUCCESS",
                   "enum": [
                     "SUCCESS",
-                    "PENDING",
                     "FAILED"
                   ]
                 }
@@ -4623,6 +6301,155 @@ func init() {
         "$ref": "#/definitions/PeerUpdate"
       }
     },
+    "Permission": {
+      "description": "permissions attached to a role.",
+      "type": "object",
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "description": "allowed actions in weaviate.",
+          "type": "string",
+          "enum": [
+            "manage_backups",
+            "read_cluster",
+            "create_data",
+            "read_data",
+            "update_data",
+            "delete_data",
+            "read_nodes",
+            "create_roles",
+            "read_roles",
+            "update_roles",
+            "delete_roles",
+            "create_collections",
+            "read_collections",
+            "update_collections",
+            "delete_collections",
+            "assign_and_revoke_users",
+            "create_users",
+            "read_users",
+            "update_users",
+            "delete_users",
+            "create_tenants",
+            "read_tenants",
+            "update_tenants",
+            "delete_tenants"
+          ]
+        },
+        "backups": {
+          "description": "resources applicable for backup actions",
+          "type": "object",
+          "properties": {
+            "collection": {
+              "description": "string or regex. if a specific collection name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            }
+          }
+        },
+        "collections": {
+          "description": "resources applicable for collection and/or tenant actions",
+          "type": "object",
+          "properties": {
+            "collection": {
+              "description": "string or regex. if a specific collection name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            }
+          }
+        },
+        "data": {
+          "description": "resources applicable for data actions",
+          "type": "object",
+          "properties": {
+            "collection": {
+              "description": "string or regex. if a specific collection name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            },
+            "object": {
+              "description": "string or regex. if a specific object ID, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            },
+            "tenant": {
+              "description": "string or regex. if a specific tenant name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            }
+          }
+        },
+        "nodes": {
+          "description": "resources applicable for cluster actions",
+          "type": "object",
+          "properties": {
+            "collection": {
+              "description": "string or regex. if a specific collection name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            },
+            "verbosity": {
+              "description": "whether to allow (verbose) returning shards and stats data in the response",
+              "type": "string",
+              "default": "minimal",
+              "enum": [
+                "verbose",
+                "minimal"
+              ]
+            }
+          }
+        },
+        "roles": {
+          "description": "resources applicable for role actions",
+          "type": "object",
+          "properties": {
+            "role": {
+              "description": "string or regex. if a specific role name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            },
+            "scope": {
+              "description": "set the scope for the manage role permission",
+              "type": "string",
+              "default": "match",
+              "enum": [
+                "all",
+                "match"
+              ]
+            }
+          }
+        },
+        "tenants": {
+          "description": "resources applicable for tenant actions",
+          "type": "object",
+          "properties": {
+            "collection": {
+              "description": "string or regex. if a specific collection name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            },
+            "tenant": {
+              "description": "string or regex. if a specific tenant name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            }
+          }
+        },
+        "users": {
+          "description": "resources applicable for user actions",
+          "type": "object",
+          "properties": {
+            "users": {
+              "description": "string or regex. if a specific name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            }
+          }
+        }
+      }
+    },
     "PhoneNumber": {
       "properties": {
         "countryCode": {
@@ -4666,6 +6493,9 @@ func init() {
             "type": "string"
           }
         },
+        "userType": {
+          "$ref": "#/definitions/UserTypeInput"
+        },
         "username": {
           "description": "The username that was extracted either from the authentication information",
           "type": "string"
@@ -4676,7 +6506,7 @@ func init() {
       "type": "object",
       "properties": {
         "dataType": {
-          "description": "Can be a reference to another type when it starts with a capital (for example Person), otherwise \"string\" or \"int\".",
+          "description": "Data type of the property (required). If it starts with a capital (for example Person), may be a reference to another type.",
           "type": "array",
           "items": {
             "type": "string"
@@ -4687,17 +6517,17 @@ func init() {
           "type": "string"
         },
         "indexFilterable": {
-          "description": "Optional. Should this property be indexed in the inverted index. Defaults to true. If you choose false, you will not be able to use this property in where filters. This property has no affect on vectorization decisions done by modules",
+          "description": "Whether to include this property in the filterable, Roaring Bitmap index. If ` + "`" + `false` + "`" + `, this property cannot be used in ` + "`" + `where` + "`" + ` filters. \u003cbr/\u003e\u003cbr/\u003eNote: Unrelated to vectorization behavior.",
           "type": "boolean",
           "x-nullable": true
         },
         "indexInverted": {
-          "description": "Optional. Should this property be indexed in the inverted index. Defaults to true. If you choose false, you will not be able to use this property in where filters, bm25 or hybrid search. This property has no affect on vectorization decisions done by modules (deprecated as of v1.19; use indexFilterable or/and indexSearchable instead)",
+          "description": "(Deprecated). Whether to include this property in the inverted index. If ` + "`" + `false` + "`" + `, this property cannot be used in ` + "`" + `where` + "`" + ` filters, ` + "`" + `bm25` + "`" + ` or ` + "`" + `hybrid` + "`" + ` search. \u003cbr/\u003e\u003cbr/\u003eUnrelated to vectorization behavior (deprecated as of v1.19; use indexFilterable or/and indexSearchable instead)",
           "type": "boolean",
           "x-nullable": true
         },
         "indexRangeFilters": {
-          "description": "Optional. Should this property be indexed in the inverted index. Defaults to false. Provides better performance for range queries compared to filterable index in large datasets. Applicable only to properties of data type int, number, date.",
+          "description": "Whether to include this property in the filterable, range-based Roaring Bitmap index. Provides better performance for range queries compared to filterable index in large datasets. Applicable only to properties of data type int, number, date.",
           "type": "boolean",
           "x-nullable": true
         },
@@ -4711,7 +6541,7 @@ func init() {
           "type": "object"
         },
         "name": {
-          "description": "Name of the property as URI relative to the schema URL.",
+          "description": "The name of the property (required). Multiple words should be concatenated in camelCase, e.g. ` + "`" + `nameOfAuthor` + "`" + `.",
           "type": "string"
         },
         "nestedProperties": {
@@ -4733,13 +6563,14 @@ func init() {
             "trigram",
             "gse",
             "kagome_kr",
-            "kagome_ja"
+            "kagome_ja",
+            "gse_ch"
           ]
         }
       }
     },
     "PropertySchema": {
-      "description": "This is an open object, with OpenAPI Specification 3.0 this will be more detailed. See Weaviate docs for more info. In the future this will become a key/value OR a SingleRef definition.",
+      "description": "Names and values of an individual property. A returned response may also contain additional metadata, such as from classification or feature projection.",
       "type": "object"
     },
     "RaftStatistics": {
@@ -4865,22 +6696,141 @@ func init() {
       "type": "object",
       "properties": {
         "asyncEnabled": {
-          "description": "Enable asynchronous replication",
+          "description": "Enable asynchronous replication (default: false).",
           "type": "boolean",
           "x-omitempty": false
         },
         "deletionStrategy": {
-          "description": "Conflict resolution strategy for deleted objects",
+          "description": "Conflict resolution strategy for deleted objects.",
           "type": "string",
           "enum": [
             "NoAutomatedResolution",
-            "DeleteOnConflict"
+            "DeleteOnConflict",
+            "TimeBasedResolution"
           ],
           "x-omitempty": true
         },
         "factor": {
-          "description": "Number of times a class is replicated",
+          "description": "Number of times a class is replicated (default: 1).",
           "type": "integer"
+        }
+      }
+    },
+    "ReplicationDeleteReplicaRequest": {
+      "description": "Request body to delete a replica of given shard of a given collection",
+      "type": "object",
+      "required": [
+        "nodeName",
+        "collectionId",
+        "shardId"
+      ],
+      "properties": {
+        "collectionId": {
+          "description": "The collection name holding the replica to be delete",
+          "type": "string"
+        },
+        "nodeName": {
+          "description": "The node containing the replica to be deleted",
+          "type": "string"
+        },
+        "shardId": {
+          "description": "The shard id holding the replica to be deleted",
+          "type": "string"
+        }
+      }
+    },
+    "ReplicationDisableReplicaRequest": {
+      "description": "Request body to disable (soft-delete) a replica of given shard of a given collection",
+      "type": "object",
+      "required": [
+        "nodeName",
+        "collectionId",
+        "shardId"
+      ],
+      "properties": {
+        "collectionId": {
+          "description": "The collection name holding the replica to be disabled",
+          "type": "string"
+        },
+        "nodeName": {
+          "description": "The node containing the replica to be disabled",
+          "type": "string"
+        },
+        "shardId": {
+          "description": "The shard id holding the replica to be disabled",
+          "type": "string"
+        }
+      }
+    },
+    "ReplicationReplicateDetailsReplicaResponse": {
+      "description": "The current status and details of a replication operation, including information about the resources involved in the replication process.",
+      "required": [
+        "id",
+        "shardId",
+        "sourceNodeId",
+        "targetNodeId",
+        "collection",
+        "status"
+      ],
+      "properties": {
+        "collection": {
+          "description": "The name of the collection holding data being replicated.",
+          "type": "string"
+        },
+        "id": {
+          "description": "The unique id of the replication operation.",
+          "type": "string"
+        },
+        "shardId": {
+          "description": "The id of the shard to collect replication details for.",
+          "type": "string"
+        },
+        "sourceNodeId": {
+          "description": "The id of the node where the source replica is allocated.",
+          "type": "string"
+        },
+        "status": {
+          "description": "The current status of the replication operation, indicating the replication phase the operation is in.",
+          "type": "string",
+          "enum": [
+            "READY",
+            "INDEXING",
+            "REPLICATION_FINALIZING",
+            "REPLICATION_HYDRATING",
+            "REPLICATION_DEHYDRATING"
+          ]
+        },
+        "targetNodeId": {
+          "description": "The id of the node where the target replica is allocated.",
+          "type": "string"
+        }
+      }
+    },
+    "ReplicationReplicateReplicaRequest": {
+      "description": "Request body to add a replica of given shard of a given collection",
+      "type": "object",
+      "required": [
+        "sourceNodeName",
+        "destinationNodeName",
+        "collectionId",
+        "shardId"
+      ],
+      "properties": {
+        "collectionId": {
+          "description": "The collection name holding the shard",
+          "type": "string"
+        },
+        "destinationNodeName": {
+          "description": "The node to add a copy of the replica on",
+          "type": "string"
+        },
+        "shardId": {
+          "description": "The shard id holding the replica to be copied",
+          "type": "string"
+        },
+        "sourceNodeName": {
+          "description": "The node containing the replica",
+          "type": "string"
         }
       }
     },
@@ -4888,6 +6838,10 @@ func init() {
       "description": "Backup custom configuration",
       "type": "object",
       "properties": {
+        "Bucket": {
+          "description": "Name of the bucket, container, volume, etc",
+          "type": "string"
+        },
         "CPUPercentage": {
           "description": "Desired CPU core utilization ranging from 1%-80%",
           "type": "integer",
@@ -4895,7 +6849,43 @@ func init() {
           "maximum": 80,
           "minimum": 1,
           "x-nullable": false
+        },
+        "Endpoint": {
+          "description": "name of the endpoint, e.g. s3.amazonaws.com",
+          "type": "string"
+        },
+        "Path": {
+          "description": "Path within the bucket",
+          "type": "string"
         }
+      }
+    },
+    "Role": {
+      "type": "object",
+      "required": [
+        "name",
+        "permissions"
+      ],
+      "properties": {
+        "name": {
+          "description": "role name",
+          "type": "string"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "description": "list of permissions (level, action, resource)",
+            "type": "object",
+            "$ref": "#/definitions/Permission"
+          }
+        }
+      }
+    },
+    "RolesListResponse": {
+      "description": "list of roles",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Role"
       }
     },
     "Schema": {
@@ -5077,18 +7067,18 @@ func init() {
       "type": "object",
       "properties": {
         "additions": {
-          "description": "stopwords to be considered additionally",
+          "description": "Stopwords to be considered additionally (default: []). Can be any array of custom strings.",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "preset": {
-          "description": "pre-existing list of common words by language",
+          "description": "Pre-existing list of common words by language (default: 'en'). Options: ['en', 'none'].",
           "type": "string"
         },
         "removals": {
-          "description": "stopwords to be removed from consideration",
+          "description": "Stopwords to be removed from consideration (default: []). Can be any array of custom strings.",
           "type": "array",
           "items": {
             "type": "string"
@@ -5117,18 +7107,90 @@ func init() {
           ]
         },
         "name": {
-          "description": "name of the tenant",
+          "description": "The name of the tenant (required).",
           "type": "string"
         }
       }
     },
-    "Vector": {
-      "description": "A Vector object",
-      "type": "array",
-      "items": {
-        "type": "number",
-        "format": "float"
+    "TenantResponse": {
+      "description": "attributes representing a single tenant response within weaviate",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Tenant"
+        },
+        {
+          "properties": {
+            "belongsToNodes": {
+              "description": "The list of nodes that owns that tenant data.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "UserApiKey": {
+      "type": "object",
+      "required": [
+        "apikey"
+      ],
+      "properties": {
+        "apikey": {
+          "description": "The apikey",
+          "type": "string"
+        }
       }
+    },
+    "UserOwnInfo": {
+      "type": "object",
+      "required": [
+        "username"
+      ],
+      "properties": {
+        "groups": {
+          "description": "The groups associated to the user",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "description": "The roles assigned to own user",
+            "type": "object",
+            "$ref": "#/definitions/Role"
+          }
+        },
+        "username": {
+          "description": "The username associated with the provided key",
+          "type": "string"
+        }
+      }
+    },
+    "UserTypeInput": {
+      "description": "the type of user",
+      "type": "string",
+      "enum": [
+        "db",
+        "oidc"
+      ]
+    },
+    "UserTypeOutput": {
+      "description": "the type of user",
+      "type": "string",
+      "enum": [
+        "db_user",
+        "db_env_user",
+        "oidc"
+      ]
+    },
+    "Vector": {
+      "description": "A vector representation of the object. If provided at object creation, this wil take precedence over any vectorizer setting.",
+      "type": "object"
     },
     "VectorConfig": {
       "type": "object",
@@ -5152,7 +7214,7 @@ func init() {
       "type": "object"
     },
     "Vectors": {
-      "description": "A Multi Vector map of named vectors",
+      "description": "A map of named vectors for multi-vector representations.",
       "type": "object",
       "additionalProperties": {
         "$ref": "#/definitions/Vector"
@@ -5341,13 +7403,13 @@ func init() {
   "parameters": {
     "CommonAfterParameterQuery": {
       "type": "string",
-      "description": "The starting ID of the result window.",
+      "description": "A threshold UUID of the objects to retrieve after, using an UUID-based ordering. This object is not part of the set. \u003cbr/\u003e\u003cbr/\u003eMust be used with ` + "`" + `class` + "`" + `, typically in conjunction with ` + "`" + `limit` + "`" + `. \u003cbr/\u003e\u003cbr/\u003eNote ` + "`" + `after` + "`" + ` cannot be used with ` + "`" + `offset` + "`" + ` or ` + "`" + `sort` + "`" + `. \u003cbr/\u003e\u003cbr/\u003eFor a null value similar to offset=0, set an empty string in the request, i.e. ` + "`" + `after=` + "`" + ` or ` + "`" + `after` + "`" + `.",
       "name": "after",
       "in": "query"
     },
     "CommonClassParameterQuery": {
       "type": "string",
-      "description": "Class parameter specifies the class from which to query objects",
+      "description": "The collection from which to query objects.  \u003cbr/\u003e\u003cbr/\u003eNote that if ` + "`" + `class` + "`" + ` is not provided, the response will not include any objects.",
       "name": "class",
       "in": "query"
     },
@@ -5366,7 +7428,7 @@ func init() {
     "CommonLimitParameterQuery": {
       "type": "integer",
       "format": "int64",
-      "description": "The maximum number of items to be returned per page. Default value is set in Weaviate config.",
+      "description": "The maximum number of items to be returned per page. The default is 25 unless set otherwise as an environment variable.",
       "name": "limit",
       "in": "query"
     },
@@ -5380,13 +7442,13 @@ func init() {
       "type": "integer",
       "format": "int64",
       "default": 0,
-      "description": "The starting index of the result window. Default value is 0.",
+      "description": "The starting index of the result window. Note ` + "`" + `offset` + "`" + ` will retrieve ` + "`" + `offset+limit` + "`" + ` results and return ` + "`" + `limit` + "`" + ` results from the object with index ` + "`" + `offset` + "`" + ` onwards. Limited by the value of ` + "`" + `QUERY_MAXIMUM_RESULTS` + "`" + `. \u003cbr/\u003e\u003cbr/\u003eShould be used in conjunction with ` + "`" + `limit` + "`" + `. \u003cbr/\u003e\u003cbr/\u003eCannot be used with ` + "`" + `after` + "`" + `.",
       "name": "offset",
       "in": "query"
     },
     "CommonOrderParameterQuery": {
       "type": "string",
-      "description": "Order parameter to tell how to order (asc or desc) data within given field",
+      "description": "Order parameter to tell how to order (asc or desc) data within given field. Should be used in conjunction with ` + "`" + `sort` + "`" + ` parameter. If providing multiple ` + "`" + `sort` + "`" + ` values, provide multiple ` + "`" + `order` + "`" + ` values in corresponding order, e.g.: ` + "`" + `sort=author_name,title\u0026order=desc,asc` + "`" + `.",
       "name": "order",
       "in": "query"
     },
@@ -5399,7 +7461,7 @@ func init() {
     },
     "CommonSortParameterQuery": {
       "type": "string",
-      "description": "Sort parameter to pass an information about the names of the sort fields",
+      "description": "Name(s) of the property to sort by - e.g. ` + "`" + `city` + "`" + `, or ` + "`" + `country,city` + "`" + `.",
       "name": "sort",
       "in": "query"
     },
@@ -5467,20 +7529,21 @@ func init() {
   ],
   "swagger": "2.0",
   "info": {
-    "description": "Cloud-native, modular vector database",
+    "description": "# Introduction\n Weaviate is an open source, AI-native vector database that helps developers create intuitive and reliable AI-powered applications. \n ### Base Path \nThe base path for the Weaviate server is structured as ` + "`" + `[YOUR-WEAVIATE-HOST]:[PORT]/v1` + "`" + `. As an example, if you wish to access the ` + "`" + `schema` + "`" + ` endpoint on a local instance, you would navigate to ` + "`" + `http://localhost:8080/v1/schema` + "`" + `. Ensure you replace ` + "`" + `[YOUR-WEAVIATE-HOST]` + "`" + ` and ` + "`" + `[PORT]` + "`" + ` with your actual server host and port number respectively. \n ### Questions? \nIf you have any comments or questions, please feel free to reach out to us at the community forum [https://forum.weaviate.io/](https://forum.weaviate.io/). \n### Issues? \nIf you find a bug or want to file a feature request, please open an issue on our GitHub repository for [Weaviate](https://github.com/weaviate/weaviate). \n### Want more documentation? \nFor a quickstart, code examples, concepts and more, please visit our [documentation page](https://weaviate.io/developers/weaviate).",
     "title": "Weaviate",
     "contact": {
       "name": "Weaviate",
       "url": "https://github.com/weaviate",
       "email": "hello@weaviate.io"
     },
-    "version": "1.27.0"
+    "version": "1.31.0-dev"
   },
   "basePath": "/v1",
   "paths": {
     "/": {
       "get": {
-        "description": "Home. Discover the REST API",
+        "description": "Get links to other endpoints to help discover the REST API",
+        "summary": "List available endpoints",
         "operationId": "weaviate.root",
         "responses": {
           "200": {
@@ -5503,6 +7566,7 @@ func init() {
     "/.well-known/live": {
       "get": {
         "description": "Determines whether the application is alive. Can be used for kubernetes liveness probe",
+        "summary": "Get application liveness.",
         "operationId": "weaviate.wellknown.liveness",
         "responses": {
           "200": {
@@ -5562,6 +7626,7 @@ func init() {
     "/.well-known/ready": {
       "get": {
         "description": "Determines whether the application is ready to receive traffic. Can be used for kubernetes readiness probe.",
+        "summary": "Get application readiness.",
         "operationId": "weaviate.wellknown.readiness",
         "responses": {
           "200": {
@@ -5573,12 +7638,957 @@ func init() {
         }
       }
     },
+    "/authz/groups/{id}/assign": {
+      "post": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Assign a role to a group",
+        "operationId": "assignRoleToGroup",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "group name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "roles": {
+                  "description": "the roles that assigned to group",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role assigned successfully"
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "role or group is not found."
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.assign.role"
+        ]
+      }
+    },
+    "/authz/groups/{id}/revoke": {
+      "post": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Revoke a role from a group",
+        "operationId": "revokeRoleFromGroup",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "group name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "roles": {
+                  "description": "the roles that revoked from group",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role revoked successfully"
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "role or group is not found."
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.revoke.role.group"
+        ]
+      }
+    },
+    "/authz/roles": {
+      "get": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Get all roles",
+        "operationId": "getRoles",
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "schema": {
+              "$ref": "#/definitions/RolesListResponse"
+            }
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.get.roles"
+        ]
+      },
+      "post": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "create new role",
+        "operationId": "createRole",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Role"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Role created successfully"
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "409": {
+            "description": "Role already exists",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous. Are you sure the class is defined in the configuration file?",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.create.role"
+        ]
+      }
+    },
+    "/authz/roles/{id}": {
+      "get": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Get a role",
+        "operationId": "getRole",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "role name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "schema": {
+              "$ref": "#/definitions/Role"
+            }
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "no role found"
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.get.role"
+        ]
+      },
+      "delete": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Delete role",
+        "operationId": "deleteRole",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "role name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successfully deleted."
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.delete.role"
+        ]
+      }
+    },
+    "/authz/roles/{id}/add-permissions": {
+      "post": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Add permission to a given role.",
+        "operationId": "addPermissions",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "role name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "name",
+                "permissions"
+              ],
+              "properties": {
+                "permissions": {
+                  "description": "permissions to be added to the role",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/Permission"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Permissions added successfully"
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "no role found"
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous. Are you sure the class is defined in the configuration file?",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.add.role.permissions"
+        ]
+      }
+    },
+    "/authz/roles/{id}/has-permission": {
+      "post": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Check whether role possesses this permission.",
+        "operationId": "hasPermission",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "role name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Permission"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Permission check was successful",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous. Are you sure the class is defined in the configuration file?",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.has.role.permission"
+        ]
+      }
+    },
+    "/authz/roles/{id}/remove-permissions": {
+      "post": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Remove permissions from a role. If this results in an empty role, the role will be deleted.",
+        "operationId": "removePermissions",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "role name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "permissions"
+              ],
+              "properties": {
+                "permissions": {
+                  "description": "permissions to remove from the role",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/Permission"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Permissions removed successfully"
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "no role found"
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous. Are you sure the class is defined in the configuration file?",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.remove.role.permissions"
+        ]
+      }
+    },
+    "/authz/roles/{id}/user-assignments": {
+      "get": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "get users assigned to role",
+        "operationId": "getUsersForRole",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "role name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Users assigned to this role",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/GetUsersForRoleOKBodyItems0"
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "no role found"
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.get.roles.users"
+        ]
+      }
+    },
+    "/authz/roles/{id}/users": {
+      "get": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "get users (db + OIDC) assigned to role. Deprecated, will be removed when 1.29 is not supported anymore",
+        "operationId": "getUsersForRoleDeprecated",
+        "deprecated": true,
+        "parameters": [
+          {
+            "type": "string",
+            "description": "role name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Users assigned to this role",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "no role found"
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.get.roles.users"
+        ]
+      }
+    },
+    "/authz/users/{id}/assign": {
+      "post": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Assign a role to a user",
+        "operationId": "assignRoleToUser",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "roles": {
+                  "description": "the roles that assigned to user",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "userType": {
+                  "$ref": "#/definitions/UserTypeInput"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role assigned successfully"
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "role or user is not found.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.assign.role.user"
+        ]
+      }
+    },
+    "/authz/users/{id}/revoke": {
+      "post": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "Revoke a role from a user",
+        "operationId": "revokeRoleFromUser",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "roles": {
+                  "description": "the roles that revoked from the key or user",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "userType": {
+                  "$ref": "#/definitions/UserTypeInput"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role revoked successfully"
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "role or user is not found.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.revoke.role.user"
+        ]
+      }
+    },
+    "/authz/users/{id}/roles": {
+      "get": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "get roles assigned to user (DB + OIDC). Deprecated, will be removed when 1.29 is not supported anymore",
+        "operationId": "getRolesForUserDeprecated",
+        "deprecated": true,
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role assigned users",
+            "schema": {
+              "$ref": "#/definitions/RolesListResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "no role found for user"
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous. Are you sure the class is defined in the configuration file?",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.get.users.roles"
+        ]
+      }
+    },
+    "/authz/users/{id}/roles/{userType}": {
+      "get": {
+        "tags": [
+          "authz"
+        ],
+        "summary": "get roles assigned to user",
+        "operationId": "getRolesForUser",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user name",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "enum": [
+              "oidc",
+              "db"
+            ],
+            "type": "string",
+            "description": "The type of user",
+            "name": "userType",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to include detailed role information needed the roles permission",
+            "name": "includeFullRoles",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role assigned users",
+            "schema": {
+              "$ref": "#/definitions/RolesListResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "no role found for user"
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous. Are you sure the class is defined in the configuration file?",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.authz.get.users.roles"
+        ]
+      }
+    },
     "/backups/{backend}": {
       "get": {
         "description": "[Coming soon] List all backups in progress not implemented yet.",
         "tags": [
           "backups"
         ],
+        "summary": "List backups in progress",
         "operationId": "backups.list",
         "parameters": [
           {
@@ -5623,15 +8633,16 @@ func init() {
         ]
       },
       "post": {
-        "description": "Starts a process of creating a backup for a set of classes",
+        "description": "Start creating a backup for a set of collections. \u003cbr/\u003e\u003cbr/\u003eNotes: \u003cbr/\u003e- Weaviate uses gzip compression by default. \u003cbr/\u003e- Weaviate stays usable while a backup process is ongoing.",
         "tags": [
           "backups"
         ],
+        "summary": "Start a backup process",
         "operationId": "backups.create",
         "parameters": [
           {
             "type": "string",
-            "description": "Backup backend name e.g. filesystem, gcs, s3.",
+            "description": "Backup backend name e.g. ` + "`" + `filesystem` + "`" + `, ` + "`" + `gcs` + "`" + `, ` + "`" + `s3` + "`" + `, ` + "`" + `azure` + "`" + `.",
             "name": "backend",
             "in": "path",
             "required": true
@@ -5681,10 +8692,11 @@ func init() {
     },
     "/backups/{backend}/{id}": {
       "get": {
-        "description": "Returns status of backup creation attempt for a set of classes",
+        "description": "Returns status of backup creation attempt for a set of collections. \u003cbr/\u003e\u003cbr/\u003eAll client implementations have a ` + "`" + `wait for completion` + "`" + ` option which will poll the backup status in the background and only return once the backup has completed (successfully or unsuccessfully). If you set the ` + "`" + `wait for completion` + "`" + ` option to false, you can also check the status yourself using this endpoint.",
         "tags": [
           "backups"
         ],
+        "summary": "Get backup process status",
         "operationId": "backups.create.status",
         "parameters": [
           {
@@ -5700,6 +8712,18 @@ func init() {
             "name": "id",
             "in": "path",
             "required": true
+          },
+          {
+            "type": "string",
+            "description": "Name of the bucket, container, volume, etc",
+            "name": "bucket",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "The path within the bucket",
+            "name": "path",
+            "in": "query"
           }
         ],
         "responses": {
@@ -5746,6 +8770,7 @@ func init() {
         "tags": [
           "backups"
         ],
+        "summary": "Cancel backup",
         "operationId": "backups.cancel",
         "parameters": [
           {
@@ -5761,6 +8786,18 @@ func init() {
             "name": "id",
             "in": "path",
             "required": true
+          },
+          {
+            "type": "string",
+            "description": "Name of the bucket, container, volume, etc",
+            "name": "bucket",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "The path within the bucket",
+            "name": "path",
+            "in": "query"
           }
         ],
         "responses": {
@@ -5796,15 +8833,16 @@ func init() {
     },
     "/backups/{backend}/{id}/restore": {
       "get": {
-        "description": "Returns status of a backup restoration attempt for a set of classes",
+        "description": "Returns status of a backup restoration attempt for a set of classes. \u003cbr/\u003e\u003cbr/\u003eAll client implementations have a ` + "`" + `wait for completion` + "`" + ` option which will poll the backup status in the background and only return once the backup has completed (successfully or unsuccessfully). If you set the ` + "`" + `wait for completion` + "`" + ` option to false, you can also check the status yourself using the this endpoint.",
         "tags": [
           "backups"
         ],
+        "summary": "Get restore process status",
         "operationId": "backups.restore.status",
         "parameters": [
           {
             "type": "string",
-            "description": "Backup backend name e.g. filesystem, gcs, s3.",
+            "description": "Backup backend name e.g. ` + "`" + `filesystem` + "`" + `, ` + "`" + `gcs` + "`" + `, ` + "`" + `s3` + "`" + `, ` + "`" + `azure` + "`" + `.",
             "name": "backend",
             "in": "path",
             "required": true
@@ -5815,6 +8853,18 @@ func init() {
             "name": "id",
             "in": "path",
             "required": true
+          },
+          {
+            "type": "string",
+            "description": "Name of the bucket, container, volume, etc",
+            "name": "bucket",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "The path within the bucket",
+            "name": "path",
+            "in": "query"
           }
         ],
         "responses": {
@@ -5851,15 +8901,16 @@ func init() {
         ]
       },
       "post": {
-        "description": "Starts a process of restoring a backup for a set of classes",
+        "description": "Starts a process of restoring a backup for a set of collections. \u003cbr/\u003e\u003cbr/\u003eAny backup can be restored to any machine, as long as the number of nodes between source and target are identical.\u003cbr/\u003e\u003cbr/\u003eRequrements:\u003cbr/\u003e\u003cbr/\u003e- None of the collections to be restored already exist on the target restoration node(s).\u003cbr/\u003e- The node names of the backed-up collections' must match those of the target restoration node(s).",
         "tags": [
           "backups"
         ],
+        "summary": "Start a restoration process",
         "operationId": "backups.restore",
         "parameters": [
           {
             "type": "string",
-            "description": "Backup backend name e.g. filesystem, gcs, s3.",
+            "description": "Backup backend name e.g. ` + "`" + `filesystem` + "`" + `, ` + "`" + `gcs` + "`" + `, ` + "`" + `s3` + "`" + `, ` + "`" + `azure` + "`" + `.",
             "name": "backend",
             "in": "path",
             "required": true
@@ -5922,7 +8973,7 @@ func init() {
     },
     "/batch/objects": {
       "post": {
-        "description": "Register new Objects in bulk. Provided meta-data and schema values are validated.",
+        "description": "Create new objects in bulk. \u003cbr/\u003e\u003cbr/\u003eMeta-data and schema values are validated. \u003cbr/\u003e\u003cbr/\u003e**Note: idempotence of ` + "`" + `/batch/objects` + "`" + `**: \u003cbr/\u003e` + "`" + `POST /batch/objects` + "`" + ` is idempotent, and will overwrite any existing object given the same id.",
         "tags": [
           "batch",
           "objects"
@@ -6013,7 +9064,7 @@ func init() {
         ]
       },
       "delete": {
-        "description": "Delete Objects in bulk that match a certain filter.",
+        "description": "Batch delete objects that match a particular filter. \u003cbr/\u003e\u003cbr/\u003eThe request body takes a single ` + "`" + `where` + "`" + ` filter and will delete all objects matched. \u003cbr/\u003e\u003cbr/\u003eNote that there is a limit to the number of objects to be deleted at once using this filter, in order to protect against unexpected memory surges and very-long-running requests. The default limit is 10,000 and may be configured by setting the ` + "`" + `QUERY_MAXIMUM_RESULTS` + "`" + ` environment variable. \u003cbr/\u003e\u003cbr/\u003eObjects are deleted in the same order that they would be returned in an equivalent Get query. To delete more objects than the limit, run the same query multiple times.",
         "tags": [
           "batch",
           "objects"
@@ -6086,7 +9137,7 @@ func init() {
     },
     "/batch/references": {
       "post": {
-        "description": "Register cross-references between any class items (objects or objects) in bulk.",
+        "description": "Batch create cross-references between collections items (objects or objects) in bulk.",
         "tags": [
           "batch",
           "references"
@@ -6265,6 +9316,7 @@ func init() {
         "tags": [
           "cluster"
         ],
+        "summary": "See Raft cluster statistics",
         "operationId": "cluster.get.statistics",
         "responses": {
           "200": {
@@ -6302,7 +9354,7 @@ func init() {
     },
     "/graphql": {
       "post": {
-        "description": "Get an object based on GraphQL",
+        "description": "Get a response based on a GraphQL query",
         "tags": [
           "graphql"
         ],
@@ -6418,7 +9470,7 @@ func init() {
     },
     "/meta": {
       "get": {
-        "description": "Gives meta information about the server and can be used to provide information to another Weaviate instance that wants to interact with the current instance.",
+        "description": "Returns meta information about the server. Can be used to provide information to another Weaviate instance that wants to interact with the current instance.",
         "tags": [
           "meta"
         ],
@@ -6456,10 +9508,11 @@ func init() {
     },
     "/nodes": {
       "get": {
-        "description": "Returns status of Weaviate DB.",
+        "description": "Returns node information for the entire database.",
         "tags": [
           "nodes"
         ],
+        "summary": "Node information for the database.",
         "operationId": "nodes.get",
         "parameters": [
           {
@@ -6512,10 +9565,11 @@ func init() {
     },
     "/nodes/{className}": {
       "get": {
-        "description": "Returns status of Weaviate DB.",
+        "description": "Returns node information for the nodes relevant to the collection.",
         "tags": [
           "nodes"
         ],
+        "summary": "Node information for a collection.",
         "operationId": "nodes.get.class",
         "parameters": [
           {
@@ -6583,7 +9637,7 @@ func init() {
         "parameters": [
           {
             "type": "string",
-            "description": "The starting ID of the result window.",
+            "description": "A threshold UUID of the objects to retrieve after, using an UUID-based ordering. This object is not part of the set. \u003cbr/\u003e\u003cbr/\u003eMust be used with ` + "`" + `class` + "`" + `, typically in conjunction with ` + "`" + `limit` + "`" + `. \u003cbr/\u003e\u003cbr/\u003eNote ` + "`" + `after` + "`" + ` cannot be used with ` + "`" + `offset` + "`" + ` or ` + "`" + `sort` + "`" + `. \u003cbr/\u003e\u003cbr/\u003eFor a null value similar to offset=0, set an empty string in the request, i.e. ` + "`" + `after=` + "`" + ` or ` + "`" + `after` + "`" + `.",
             "name": "after",
             "in": "query"
           },
@@ -6591,14 +9645,14 @@ func init() {
             "type": "integer",
             "format": "int64",
             "default": 0,
-            "description": "The starting index of the result window. Default value is 0.",
+            "description": "The starting index of the result window. Note ` + "`" + `offset` + "`" + ` will retrieve ` + "`" + `offset+limit` + "`" + ` results and return ` + "`" + `limit` + "`" + ` results from the object with index ` + "`" + `offset` + "`" + ` onwards. Limited by the value of ` + "`" + `QUERY_MAXIMUM_RESULTS` + "`" + `. \u003cbr/\u003e\u003cbr/\u003eShould be used in conjunction with ` + "`" + `limit` + "`" + `. \u003cbr/\u003e\u003cbr/\u003eCannot be used with ` + "`" + `after` + "`" + `.",
             "name": "offset",
             "in": "query"
           },
           {
             "type": "integer",
             "format": "int64",
-            "description": "The maximum number of items to be returned per page. Default value is set in Weaviate config.",
+            "description": "The maximum number of items to be returned per page. The default is 25 unless set otherwise as an environment variable.",
             "name": "limit",
             "in": "query"
           },
@@ -6610,19 +9664,19 @@ func init() {
           },
           {
             "type": "string",
-            "description": "Sort parameter to pass an information about the names of the sort fields",
+            "description": "Name(s) of the property to sort by - e.g. ` + "`" + `city` + "`" + `, or ` + "`" + `country,city` + "`" + `.",
             "name": "sort",
             "in": "query"
           },
           {
             "type": "string",
-            "description": "Order parameter to tell how to order (asc or desc) data within given field",
+            "description": "Order parameter to tell how to order (asc or desc) data within given field. Should be used in conjunction with ` + "`" + `sort` + "`" + ` parameter. If providing multiple ` + "`" + `sort` + "`" + ` values, provide multiple ` + "`" + `order` + "`" + ` values in corresponding order, e.g.: ` + "`" + `sort=author_name,title\u0026order=desc,asc` + "`" + `.",
             "name": "order",
             "in": "query"
           },
           {
             "type": "string",
-            "description": "Class parameter specifies the class from which to query objects",
+            "description": "The collection from which to query objects.  \u003cbr/\u003e\u003cbr/\u003eNote that if ` + "`" + `class` + "`" + ` is not provided, the response will not include any objects.",
             "name": "class",
             "in": "query"
           },
@@ -6635,7 +9689,7 @@ func init() {
         ],
         "responses": {
           "200": {
-            "description": "Successful response.",
+            "description": "Successful response. \u003cbr/\u003e\u003cbr/\u003eIf ` + "`" + `class` + "`" + ` is not provided, the response will not include any objects.",
             "schema": {
               "$ref": "#/definitions/ObjectsListResponse"
             }
@@ -6678,11 +9732,11 @@ func init() {
         ]
       },
       "post": {
-        "description": "Registers a new Object. Provided meta-data and schema values are validated.",
+        "description": "Create a new object. \u003cbr/\u003e\u003cbr/\u003eMeta-data and schema values are validated. \u003cbr/\u003e\u003cbr/\u003e**Note: Use ` + "`" + `/batch` + "`" + ` for importing many objects**: \u003cbr/\u003eIf you plan on importing a large number of objects, it's much more efficient to use the ` + "`" + `/batch` + "`" + ` endpoint. Otherwise, sending multiple single requests sequentially would incur a large performance penalty. \u003cbr/\u003e\u003cbr/\u003e**Note: idempotence of ` + "`" + `/objects` + "`" + `**: \u003cbr/\u003ePOST /objects will fail if an id is provided which already exists in the class. To update an existing object with the objects endpoint, use the PUT or PATCH method.",
         "tags": [
           "objects"
         ],
-        "summary": "Create Objects between two Objects (object and subject).",
+        "summary": "Create a new object.",
         "operationId": "objects.create",
         "parameters": [
           {
@@ -6744,7 +9798,7 @@ func init() {
     },
     "/objects/validate": {
       "post": {
-        "description": "Validate an Object's schema and meta-data. It has to be based on a schema, which is related to the given Object to be accepted by this validation.",
+        "description": "Validate an object's schema and meta-data without creating it. \u003cbr/\u003e\u003cbr/\u003eIf the schema of the object is valid, the request should return nothing with a plain RESTful request. Otherwise, an error object will be returned.",
         "tags": [
           "objects"
         ],
@@ -6795,7 +9849,7 @@ func init() {
     },
     "/objects/{className}/{id}": {
       "get": {
-        "description": "Get a single data object",
+        "description": "Get a data object based on its collection and UUID. Also available as Websocket bus.",
         "tags": [
           "objects"
         ],
@@ -6886,7 +9940,7 @@ func init() {
         ]
       },
       "put": {
-        "description": "Update an individual data object based on its class and uuid.",
+        "description": "Update an object based on its uuid and collection. This (` + "`" + `put` + "`" + `) method replaces the object with the provided object.",
         "tags": [
           "objects"
         ],
@@ -6961,7 +10015,7 @@ func init() {
         ]
       },
       "delete": {
-        "description": "Delete a single data object.",
+        "description": "Delete an object based on its collection and UUID. \u003cbr/\u003e\u003cbr/\u003eNote: For backward compatibility, beacons also support an older, deprecated format without the collection name. As a result, when deleting a reference, the beacon specified has to match the beacon to be deleted exactly. In other words, if a beacon is present using the old format (without collection name) you also need to specify it the same way. \u003cbr/\u003e\u003cbr/\u003eIn the beacon format, you need to always use ` + "`" + `localhost` + "`" + ` as the host, rather than the actual hostname. ` + "`" + `localhost` + "`" + ` here refers to the fact that the beacon's target is on the same Weaviate instance, as opposed to a foreign instance.",
         "tags": [
           "objects"
         ],
@@ -7037,7 +10091,7 @@ func init() {
         ]
       },
       "head": {
-        "description": "Checks if a data object exists without retrieving it.",
+        "description": "Checks if a data object exists based on its collection and uuid without retrieving it. \u003cbr/\u003e\u003cbr/\u003eInternally it skips reading the object from disk other than checking if it is present. Thus it does not use resources on marshalling, parsing, etc., and is faster. Note the resulting HTTP request has no body; the existence of an object is indicated solely by the status code.",
         "tags": [
           "objects"
         ],
@@ -7189,7 +10243,7 @@ func init() {
     },
     "/objects/{className}/{id}/references/{propertyName}": {
       "put": {
-        "description": "Update all references of a property of a data object.",
+        "description": "Replace **all** references in cross-reference property of an object.",
         "tags": [
           "objects"
         ],
@@ -7281,7 +10335,7 @@ func init() {
         ]
       },
       "post": {
-        "description": "Add a single reference to a class-property.",
+        "description": "Add a single reference to an object. This adds a reference to the array of cross-references of the given property in the source object specified by its collection name and id",
         "tags": [
           "objects"
         ],
@@ -7373,7 +10427,7 @@ func init() {
         ]
       },
       "delete": {
-        "description": "Delete the single reference that is given in the body from the list of references that this property of a data object has",
+        "description": "Delete the single reference that is given in the body from the list of references that this property has.",
         "tags": [
           "objects"
         ],
@@ -7470,7 +10524,7 @@ func init() {
     },
     "/objects/{id}": {
       "get": {
-        "description": "Lists Objects.",
+        "description": "Get a specific object based on its UUID. Also available as Websocket bus.",
         "tags": [
           "objects"
         ],
@@ -7532,7 +10586,7 @@ func init() {
         ]
       },
       "put": {
-        "description": "Updates an Object's data. Given meta-data and schema values are validated. LastUpdateTime is set to the time this function is called.",
+        "description": "Updates an object based on its UUID. Given meta-data and schema values are validated. LastUpdateTime is set to the time this function is called.",
         "tags": [
           "objects"
         ],
@@ -7602,7 +10656,7 @@ func init() {
         ]
       },
       "delete": {
-        "description": "Deletes an Object from the system.",
+        "description": "Deletes an object from the database based on its UUID.",
         "tags": [
           "objects"
         ],
@@ -7661,7 +10715,7 @@ func init() {
         ]
       },
       "head": {
-        "description": "Checks if an Object exists in the system.",
+        "description": "Checks if an object exists in the system based on its UUID.",
         "tags": [
           "objects"
         ],
@@ -7704,11 +10758,11 @@ func init() {
         "x-available-in-mqtt": true,
         "x-available-in-websocket": true,
         "x-serviceIds": [
-          "weaviate.local.manipulate"
+          "weaviate.objects.check"
         ]
       },
       "patch": {
-        "description": "Updates an Object. This method supports json-merge style patch semantics (RFC 7396). Provided meta-data and schema values are validated. LastUpdateTime is set to the time this function is called.",
+        "description": "Update an object based on its UUID (using patch semantics). This method supports json-merge style patch semantics (RFC 7396). Provided meta-data and schema values are validated. LastUpdateTime is set to the time this function is called.",
         "tags": [
           "objects"
         ],
@@ -7780,7 +10834,7 @@ func init() {
     },
     "/objects/{id}/references/{propertyName}": {
       "put": {
-        "description": "Replace all references to a class-property.",
+        "description": "Replace all references in cross-reference property of an object.",
         "tags": [
           "objects"
         ],
@@ -7851,7 +10905,7 @@ func init() {
         ]
       },
       "post": {
-        "description": "Add a single reference to a class-property.",
+        "description": "Add a cross-reference.",
         "tags": [
           "objects"
         ],
@@ -7993,8 +11047,123 @@ func init() {
         ]
       }
     },
+    "/replication/replicate": {
+      "post": {
+        "tags": [
+          "replication"
+        ],
+        "summary": "Start the async operation to replicate a replica between two nodes",
+        "operationId": "replicate",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ReplicationReplicateReplicaRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Replication operation registered successfully"
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.replication.replicate"
+        ]
+      }
+    },
+    "/replication/replicate/{id}": {
+      "get": {
+        "description": "Returns the details of a replication operation for a given shard, identified by the provided replication operation id.",
+        "tags": [
+          "replication"
+        ],
+        "summary": "Get the details of a replication operation.",
+        "operationId": "replicationDetails",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "The replication operation id to get details for.",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The details of the replication operation.",
+            "schema": {
+              "$ref": "#/definitions/ReplicationReplicateDetailsReplicaResponse"
+            }
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Shard replica operation not found"
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "501": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.replication.replicate.details"
+        ]
+      }
+    },
     "/schema": {
       "get": {
+        "description": "Fetch an array of all collection definitions from the schema.",
         "tags": [
           "schema"
         ],
@@ -8037,6 +11206,7 @@ func init() {
         ]
       },
       "post": {
+        "description": "Create a new data object collection. \u003cbr/\u003e\u003cbr/\u003eIf AutoSchema is enabled, Weaviate will attempt to infer the schema from the data at import time. However, manual schema definition is recommended for production environments.",
         "tags": [
           "schema"
         ],
@@ -8139,7 +11309,7 @@ func init() {
         ]
       },
       "put": {
-        "description": "Use this endpoint to alter an existing class in the schema. Note that not all settings are mutable. If an error about immutable fields is returned and you still need to update this particular setting, you will have to delete the class (and the underlying data) and recreate. This endpoint cannot be used to modify properties. Instead use POST /v1/schema/{className}/properties. A typical use case for this endpoint is to update configuration, such as the vectorIndexConfig. Note that even in mutable sections, such as vectorIndexConfig, some fields may be immutable.",
+        "description": "Add a property to an existing collection.",
         "tags": [
           "schema"
         ],
@@ -8201,6 +11371,7 @@ func init() {
         ]
       },
       "delete": {
+        "description": "Remove a collection from the schema. This will also delete all the objects in the collection.",
         "tags": [
           "schema"
         ],
@@ -8304,6 +11475,7 @@ func init() {
     },
     "/schema/{className}/shards": {
       "get": {
+        "description": "Get the status of every shard in the cluster.",
         "tags": [
           "schema"
         ],
@@ -8358,10 +11530,11 @@ func init() {
     },
     "/schema/{className}/shards/{shardName}": {
       "put": {
-        "description": "Update shard status of an Object Class",
+        "description": "Update a shard status for a collection. For example, a shard may have been marked as ` + "`" + `READONLY` + "`" + ` because its disk was full. After providing more disk space, use this endpoint to set the shard status to ` + "`" + `READY` + "`" + ` again. There is also a convenience function in each client to set the status of all shards of a collection.",
         "tags": [
           "schema"
         ],
+        "summary": "Update a shard status.",
         "operationId": "schema.objects.shards.update",
         "parameters": [
           {
@@ -8431,6 +11604,7 @@ func init() {
         "tags": [
           "schema"
         ],
+        "summary": "Get the list of tenants.",
         "operationId": "tenants.get",
         "parameters": [
           {
@@ -8485,6 +11659,7 @@ func init() {
         "tags": [
           "schema"
         ],
+        "summary": "Update a tenant.",
         "operationId": "tenants.update",
         "parameters": [
           {
@@ -8539,10 +11714,11 @@ func init() {
         }
       },
       "post": {
-        "description": "Create a new tenant for a specific class",
+        "description": "Create a new tenant for a collection. Multi-tenancy must be enabled in the collection definition.",
         "tags": [
           "schema"
         ],
+        "summary": "Create a new tenant",
         "operationId": "tenants.create",
         "parameters": [
           {
@@ -8650,11 +11826,73 @@ func init() {
       }
     },
     "/schema/{className}/tenants/{tenantName}": {
+      "get": {
+        "description": "get a specific tenant for the given class",
+        "tags": [
+          "schema"
+        ],
+        "summary": "Get a specific tenant",
+        "operationId": "tenants.get.one",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "className",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "name": "tenantName",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "boolean",
+            "default": true,
+            "description": "If consistency is true, the request will be proxied to the leader to ensure strong schema consistency",
+            "name": "consistency",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "load the tenant given the specified class",
+            "schema": {
+              "$ref": "#/definitions/TenantResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "Tenant not found"
+          },
+          "422": {
+            "description": "Invalid tenant or class",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      },
       "head": {
         "description": "Check if a tenant exists for a specific class",
         "tags": [
           "schema"
         ],
+        "summary": "Check whether a tenant exists",
         "operationId": "tenant.exists",
         "parameters": [
           {
@@ -8707,11 +11945,430 @@ func init() {
           }
         }
       }
+    },
+    "/users/db": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "list all db users",
+        "operationId": "listAllUsers",
+        "responses": {
+          "200": {
+            "description": "Info about the user",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/DBUserInfo"
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.users.db.list_all"
+        ]
+      }
+    },
+    "/users/db/{user_id}": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "get info relevant to user, e.g. username, roles",
+        "operationId": "getUserInfo",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user id",
+            "name": "user_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Info about the user",
+            "schema": {
+              "$ref": "#/definitions/DBUserInfo"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "user not found"
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.users.db.get"
+        ]
+      },
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "create new user",
+        "operationId": "createUser",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user id",
+            "name": "user_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "User created successfully",
+            "schema": {
+              "$ref": "#/definitions/UserApiKey"
+            }
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "409": {
+            "description": "User already exists",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.users.db.create"
+        ]
+      },
+      "delete": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Delete User",
+        "operationId": "deleteUser",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user name",
+            "name": "user_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successfully deleted."
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "user not found"
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.users.db.delete"
+        ]
+      }
+    },
+    "/users/db/{user_id}/activate": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "activate a deactivated user",
+        "operationId": "activateUser",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user id",
+            "name": "user_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User successfully activated"
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "user not found"
+          },
+          "409": {
+            "description": "user already activated"
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.users.db.activateUser"
+        ]
+      }
+    },
+    "/users/db/{user_id}/deactivate": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "deactivate a user",
+        "operationId": "deactivateUser",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user id",
+            "name": "user_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "revoke_key": {
+                  "description": "if the key should be revoked when deactivating the user",
+                  "type": "boolean",
+                  "default": false
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "users successfully deactivated"
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "user not found"
+          },
+          "409": {
+            "description": "user already deactivated"
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous. Are you sure the class is defined in the configuration file?",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.users.db.deactivateUser"
+        ]
+      }
+    },
+    "/users/db/{user_id}/rotate-key": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "rotate user api key",
+        "operationId": "rotateUserApiKey",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "user id",
+            "name": "user_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ApiKey successfully changed",
+            "schema": {
+              "$ref": "#/definitions/UserApiKey"
+            }
+          },
+          "400": {
+            "description": "Malformed request.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "403": {
+            "description": "Forbidden",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "404": {
+            "description": "user not found"
+          },
+          "422": {
+            "description": "Request body is well-formed (i.e., syntactically correct), but semantically erroneous.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.users.db.rotateApiKey"
+        ]
+      }
+    },
+    "/users/own-info": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "get info relevant to own user, e.g. username, roles",
+        "operationId": "getOwnInfo",
+        "responses": {
+          "200": {
+            "description": "Info about the user",
+            "schema": {
+              "$ref": "#/definitions/UserOwnInfo"
+            }
+          },
+          "401": {
+            "description": "Unauthorized or invalid credentials."
+          },
+          "500": {
+            "description": "An error has occurred while trying to fulfill the request. Most likely the ErrorResponse will contain more information about the error.",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "x-serviceIds": [
+          "weaviate.users.get.own-info"
+        ]
+      }
     }
   },
   "definitions": {
     "AdditionalProperties": {
-      "description": "Additional Meta information about a single object object.",
+      "description": "(Response only) Additional meta information about a single object.",
       "type": "object",
       "additionalProperties": {
         "type": "object"
@@ -8722,12 +12379,12 @@ func init() {
       "type": "object",
       "properties": {
         "b": {
-          "description": "calibrates term-weight scaling based on the document length",
+          "description": "Calibrates term-weight scaling based on the document length (default: 0.75).",
           "type": "number",
           "format": "float"
         },
         "k1": {
-          "description": "calibrates term-weight scaling based on the term frequency within a document",
+          "description": "Calibrates term-weight scaling based on the term frequency within a document (default: 1.2).",
           "type": "number",
           "format": "float"
         }
@@ -8737,6 +12394,10 @@ func init() {
       "description": "Backup custom configuration",
       "type": "object",
       "properties": {
+        "Bucket": {
+          "description": "Name of the bucket, container, volume, etc",
+          "type": "string"
+        },
         "CPUPercentage": {
           "description": "Desired CPU core utilization ranging from 1%-80%",
           "type": "integer",
@@ -8746,7 +12407,7 @@ func init() {
           "x-nullable": false
         },
         "ChunkSize": {
-          "description": "Weaviate will attempt to come close the specified size, with a minimum of 2MB, default of 128MB, and a maximum of 512MB",
+          "description": "Aimed chunk size, with a minimum of 2MB, default of 128MB, and a maximum of 512MB. The actual chunk size may vary.",
           "type": "integer",
           "default": 128,
           "maximum": 512,
@@ -8763,6 +12424,14 @@ func init() {
             "BestCompression"
           ],
           "x-nullable": false
+        },
+        "Endpoint": {
+          "description": "name of the endpoint, e.g. s3.amazonaws.com",
+          "type": "string"
+        },
+        "Path": {
+          "description": "Path or key within the bucket",
+          "type": "string"
         }
       }
     },
@@ -8775,18 +12444,18 @@ func init() {
           "$ref": "#/definitions/BackupConfig"
         },
         "exclude": {
-          "description": "List of classes to exclude from the backup creation process",
+          "description": "List of collections to exclude from the backup creation process. If not set, all collections are included. Cannot be used together with ` + "`" + `include` + "`" + `.",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "id": {
-          "description": "The ID of the backup. Must be URL-safe and work as a filesystem path, only lowercase, numbers, underscore, minus characters allowed.",
+          "description": "The ID of the backup (required). Must be URL-safe and work as a filesystem path, only lowercase, numbers, underscore, minus characters allowed.",
           "type": "string"
         },
         "include": {
-          "description": "List of classes to include in the backup creation process",
+          "description": "List of collections to include in the backup creation process. If not set, all collections are included. Cannot be used together with ` + "`" + `exclude` + "`" + `.",
           "type": "array",
           "items": {
             "type": "string"
@@ -8799,6 +12468,10 @@ func init() {
       "properties": {
         "backend": {
           "description": "Backup backend name e.g. filesystem, gcs, s3.",
+          "type": "string"
+        },
+        "bucket": {
+          "description": "Name of the bucket, container, volume, etc",
           "type": "string"
         },
         "classes": {
@@ -8817,7 +12490,7 @@ func init() {
           "type": "string"
         },
         "path": {
-          "description": "destination path of backup files proper to selected backend",
+          "description": "Path within bucket of backup",
           "type": "string"
         },
         "status": {
@@ -8996,7 +12669,7 @@ func init() {
           "type": "string"
         },
         "path": {
-          "description": "destination path of backup files proper to selected backup backend",
+          "description": "destination path of backup files proper to selected backup backend, contains bucket and path",
           "type": "string"
         },
         "status": {
@@ -9017,8 +12690,14 @@ func init() {
     "BatchDelete": {
       "type": "object",
       "properties": {
+        "deletionTimeUnixMilli": {
+          "description": "Timestamp of deletion in milliseconds since epoch UTC.",
+          "type": "integer",
+          "format": "int64",
+          "x-nullable": true
+        },
         "dryRun": {
-          "description": "If true, objects will not be deleted yet, but merely listed. Defaults to false.",
+          "description": "If true, the call will show which objects would be matched using the specified filter without deleting any objects. \u003cbr/\u003e\u003cbr/\u003eDepending on the configured verbosity, you will either receive a count of affected objects, or a list of IDs.",
           "type": "boolean",
           "default": false
         },
@@ -9065,6 +12744,12 @@ func init() {
       "description": "Delete Objects response.",
       "type": "object",
       "properties": {
+        "deletionTimeUnixMilli": {
+          "description": "Timestamp of deletion in milliseconds since epoch UTC.",
+          "type": "integer",
+          "format": "int64",
+          "x-nullable": true
+        },
         "dryRun": {
           "description": "If true, objects will not be deleted yet, but merely listed. Defaults to false.",
           "type": "boolean",
@@ -9244,7 +12929,6 @@ func init() {
                   "default": "SUCCESS",
                   "enum": [
                     "SUCCESS",
-                    "PENDING",
                     "FAILED"
                   ]
                 }
@@ -9266,7 +12950,6 @@ func init() {
           "default": "SUCCESS",
           "enum": [
             "SUCCESS",
-            "PENDING",
             "FAILED"
           ]
         }
@@ -9329,7 +13012,7 @@ func init() {
       }
     },
     "C11yVector": {
-      "description": "A Vector in the Contextionary",
+      "description": "A vector representation of the object in the Contextionary. If provided at object creation, this wil take precedence over any vectorizer setting.",
       "type": "array",
       "items": {
         "type": "number",
@@ -9474,25 +13157,25 @@ func init() {
       "type": "object",
       "properties": {
         "class": {
-          "description": "Name of the class as URI relative to the schema URL.",
+          "description": "Name of the class (a.k.a. 'collection') (required). Multiple words should be concatenated in CamelCase, e.g. ` + "`" + `ArticleAuthor` + "`" + `.",
           "type": "string"
         },
         "description": {
-          "description": "Description of the class.",
+          "description": "Description of the collection for metadata purposes.",
           "type": "string"
         },
         "invertedIndexConfig": {
           "$ref": "#/definitions/InvertedIndexConfig"
         },
         "moduleConfig": {
-          "description": "Configuration specific to modules this Weaviate instance has installed",
+          "description": "Configuration specific to modules in a collection context.",
           "type": "object"
         },
         "multiTenancyConfig": {
           "$ref": "#/definitions/MultiTenancyConfig"
         },
         "properties": {
-          "description": "The properties of the class.",
+          "description": "Define properties of the collection.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/Property"
@@ -9506,6 +13189,7 @@ func init() {
           "type": "object"
         },
         "vectorConfig": {
+          "description": "Configure named vectors. Either use this field or ` + "`" + `vectorizer` + "`" + `, ` + "`" + `vectorIndexType` + "`" + `, and ` + "`" + `vectorIndexConfig` + "`" + ` fields. Available from ` + "`" + `v1.24.0` + "`" + `.",
           "type": "object",
           "additionalProperties": {
             "$ref": "#/definitions/VectorConfig"
@@ -9680,6 +13364,40 @@ func init() {
         }
       }
     },
+    "DBUserInfo": {
+      "type": "object",
+      "required": [
+        "userId",
+        "dbUserType",
+        "roles",
+        "active"
+      ],
+      "properties": {
+        "active": {
+          "description": "activity status of the returned user",
+          "type": "boolean"
+        },
+        "dbUserType": {
+          "description": "type of the returned user",
+          "type": "string",
+          "enum": [
+            "db_user",
+            "db_env_user"
+          ]
+        },
+        "roles": {
+          "description": "The role names associated to the user",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "userId": {
+          "description": "The user id of the given user",
+          "type": "string"
+        }
+      }
+    },
     "Deprecation": {
       "type": "object",
       "properties": {
@@ -9772,6 +13490,21 @@ func init() {
         }
       }
     },
+    "GetUsersForRoleOKBodyItems0": {
+      "type": "object",
+      "required": [
+        "name",
+        "userType"
+      ],
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "userType": {
+          "$ref": "#/definitions/UserTypeOutput"
+        }
+      }
+    },
     "GraphQLError": {
       "description": "An error response caused by a GraphQL query.",
       "properties": {
@@ -9858,7 +13591,7 @@ func init() {
       }
     },
     "InvertedIndexConfig": {
-      "description": "Configure the inverted index built into Weaviate",
+      "description": "Configure the inverted index built into Weaviate (default: 60).",
       "type": "object",
       "properties": {
         "bm25": {
@@ -9870,19 +13603,23 @@ func init() {
           "format": "int"
         },
         "indexNullState": {
-          "description": "Index each object with the null state",
+          "description": "Index each object with the null state (default: 'false').",
           "type": "boolean"
         },
         "indexPropertyLength": {
-          "description": "Index length of properties",
+          "description": "Index length of properties (default: 'false').",
           "type": "boolean"
         },
         "indexTimestamps": {
-          "description": "Index each object by its internal timestamps",
+          "description": "Index each object by its internal timestamps (default: 'false').",
           "type": "boolean"
         },
         "stopwords": {
           "$ref": "#/definitions/StopwordConfig"
+        },
+        "usingBlockMaxWAND": {
+          "description": "Using BlockMax WAND for query execution (default: 'false', will be 'true' for new collections created after 1.30).",
+          "type": "boolean"
         }
       }
     },
@@ -9916,7 +13653,7 @@ func init() {
       "type": "object",
       "properties": {
         "grpcMaxMessageSize": {
-          "description": "Max message size for GRPC connection in bytes",
+          "description": "Max message size for GRPC connection in bytes.",
           "type": "integer"
         },
         "hostname": {
@@ -9925,11 +13662,11 @@ func init() {
           "format": "url"
         },
         "modules": {
-          "description": "Module-specific meta information",
+          "description": "Module-specific meta information.",
           "type": "object"
         },
         "version": {
-          "description": "Version of weaviate you are currently running",
+          "description": "The Weaviate server version.",
           "type": "string"
         }
       }
@@ -9938,17 +13675,17 @@ func init() {
       "description": "Configuration related to multi-tenancy within a class",
       "properties": {
         "autoTenantActivation": {
-          "description": "Existing tenants should (not) be turned HOT implicitly when they are accessed and in another activity status",
+          "description": "Existing tenants should (not) be turned HOT implicitly when they are accessed and in another activity status (default: false).",
           "type": "boolean",
           "x-omitempty": false
         },
         "autoTenantCreation": {
-          "description": "Nonexistent tenants should (not) be created implicitly",
+          "description": "Nonexistent tenants should (not) be created implicitly (default: false).",
           "type": "boolean",
           "x-omitempty": false
         },
         "enabled": {
-          "description": "Whether or not multi-tenancy is enabled for this class",
+          "description": "Whether or not multi-tenancy is enabled for this class (default: false).",
           "type": "boolean",
           "x-omitempty": false
         }
@@ -9989,6 +13726,7 @@ func init() {
           "type": "string"
         },
         "nestedProperties": {
+          "description": "The properties of the nested object(s). Applies to object and object[] data types.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/NestedProperty"
@@ -10001,7 +13739,12 @@ func init() {
             "word",
             "lowercase",
             "whitespace",
-            "field"
+            "field",
+            "trigram",
+            "gse",
+            "kagome_kr",
+            "kagome_ja",
+            "gse_ch"
           ]
         }
       }
@@ -10058,7 +13801,7 @@ func init() {
           "x-omitempty": false
         },
         "shardCount": {
-          "description": "The count of Weaviate's shards.",
+          "description": "The count of Weaviate's shards. To see this value, set ` + "`" + `output` + "`" + ` to ` + "`" + `verbose` + "`" + `.",
           "type": "number",
           "format": "int",
           "x-omitempty": false
@@ -10133,7 +13876,7 @@ func init() {
           "type": "string"
         },
         "creationTimeUnix": {
-          "description": "Timestamp of creation of this Object in milliseconds since epoch UTC.",
+          "description": "(Response only) Timestamp of creation of this object in milliseconds since epoch UTC.",
           "type": "integer",
           "format": "int64"
         },
@@ -10143,7 +13886,7 @@ func init() {
           "format": "uuid"
         },
         "lastUpdateTimeUnix": {
-          "description": "Timestamp of the last Object update in milliseconds since epoch UTC.",
+          "description": "(Response only) Timestamp of the last object update in milliseconds since epoch UTC.",
           "type": "integer",
           "format": "int64"
         },
@@ -10197,7 +13940,6 @@ func init() {
                   "default": "SUCCESS",
                   "enum": [
                     "SUCCESS",
-                    "PENDING",
                     "FAILED"
                   ]
                 }
@@ -10219,7 +13961,6 @@ func init() {
           "default": "SUCCESS",
           "enum": [
             "SUCCESS",
-            "PENDING",
             "FAILED"
           ]
         }
@@ -10351,6 +14092,265 @@ func init() {
         "$ref": "#/definitions/PeerUpdate"
       }
     },
+    "Permission": {
+      "description": "permissions attached to a role.",
+      "type": "object",
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "description": "allowed actions in weaviate.",
+          "type": "string",
+          "enum": [
+            "manage_backups",
+            "read_cluster",
+            "create_data",
+            "read_data",
+            "update_data",
+            "delete_data",
+            "read_nodes",
+            "create_roles",
+            "read_roles",
+            "update_roles",
+            "delete_roles",
+            "create_collections",
+            "read_collections",
+            "update_collections",
+            "delete_collections",
+            "assign_and_revoke_users",
+            "create_users",
+            "read_users",
+            "update_users",
+            "delete_users",
+            "create_tenants",
+            "read_tenants",
+            "update_tenants",
+            "delete_tenants"
+          ]
+        },
+        "backups": {
+          "description": "resources applicable for backup actions",
+          "type": "object",
+          "properties": {
+            "collection": {
+              "description": "string or regex. if a specific collection name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            }
+          }
+        },
+        "collections": {
+          "description": "resources applicable for collection and/or tenant actions",
+          "type": "object",
+          "properties": {
+            "collection": {
+              "description": "string or regex. if a specific collection name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            }
+          }
+        },
+        "data": {
+          "description": "resources applicable for data actions",
+          "type": "object",
+          "properties": {
+            "collection": {
+              "description": "string or regex. if a specific collection name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            },
+            "object": {
+              "description": "string or regex. if a specific object ID, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            },
+            "tenant": {
+              "description": "string or regex. if a specific tenant name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            }
+          }
+        },
+        "nodes": {
+          "description": "resources applicable for cluster actions",
+          "type": "object",
+          "properties": {
+            "collection": {
+              "description": "string or regex. if a specific collection name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            },
+            "verbosity": {
+              "description": "whether to allow (verbose) returning shards and stats data in the response",
+              "type": "string",
+              "default": "minimal",
+              "enum": [
+                "verbose",
+                "minimal"
+              ]
+            }
+          }
+        },
+        "roles": {
+          "description": "resources applicable for role actions",
+          "type": "object",
+          "properties": {
+            "role": {
+              "description": "string or regex. if a specific role name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            },
+            "scope": {
+              "description": "set the scope for the manage role permission",
+              "type": "string",
+              "default": "match",
+              "enum": [
+                "all",
+                "match"
+              ]
+            }
+          }
+        },
+        "tenants": {
+          "description": "resources applicable for tenant actions",
+          "type": "object",
+          "properties": {
+            "collection": {
+              "description": "string or regex. if a specific collection name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            },
+            "tenant": {
+              "description": "string or regex. if a specific tenant name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            }
+          }
+        },
+        "users": {
+          "description": "resources applicable for user actions",
+          "type": "object",
+          "properties": {
+            "users": {
+              "description": "string or regex. if a specific name, if left empty it will be ALL or *",
+              "type": "string",
+              "default": "*"
+            }
+          }
+        }
+      }
+    },
+    "PermissionBackups": {
+      "description": "resources applicable for backup actions",
+      "type": "object",
+      "properties": {
+        "collection": {
+          "description": "string or regex. if a specific collection name, if left empty it will be ALL or *",
+          "type": "string",
+          "default": "*"
+        }
+      }
+    },
+    "PermissionCollections": {
+      "description": "resources applicable for collection and/or tenant actions",
+      "type": "object",
+      "properties": {
+        "collection": {
+          "description": "string or regex. if a specific collection name, if left empty it will be ALL or *",
+          "type": "string",
+          "default": "*"
+        }
+      }
+    },
+    "PermissionData": {
+      "description": "resources applicable for data actions",
+      "type": "object",
+      "properties": {
+        "collection": {
+          "description": "string or regex. if a specific collection name, if left empty it will be ALL or *",
+          "type": "string",
+          "default": "*"
+        },
+        "object": {
+          "description": "string or regex. if a specific object ID, if left empty it will be ALL or *",
+          "type": "string",
+          "default": "*"
+        },
+        "tenant": {
+          "description": "string or regex. if a specific tenant name, if left empty it will be ALL or *",
+          "type": "string",
+          "default": "*"
+        }
+      }
+    },
+    "PermissionNodes": {
+      "description": "resources applicable for cluster actions",
+      "type": "object",
+      "properties": {
+        "collection": {
+          "description": "string or regex. if a specific collection name, if left empty it will be ALL or *",
+          "type": "string",
+          "default": "*"
+        },
+        "verbosity": {
+          "description": "whether to allow (verbose) returning shards and stats data in the response",
+          "type": "string",
+          "default": "minimal",
+          "enum": [
+            "verbose",
+            "minimal"
+          ]
+        }
+      }
+    },
+    "PermissionRoles": {
+      "description": "resources applicable for role actions",
+      "type": "object",
+      "properties": {
+        "role": {
+          "description": "string or regex. if a specific role name, if left empty it will be ALL or *",
+          "type": "string",
+          "default": "*"
+        },
+        "scope": {
+          "description": "set the scope for the manage role permission",
+          "type": "string",
+          "default": "match",
+          "enum": [
+            "all",
+            "match"
+          ]
+        }
+      }
+    },
+    "PermissionTenants": {
+      "description": "resources applicable for tenant actions",
+      "type": "object",
+      "properties": {
+        "collection": {
+          "description": "string or regex. if a specific collection name, if left empty it will be ALL or *",
+          "type": "string",
+          "default": "*"
+        },
+        "tenant": {
+          "description": "string or regex. if a specific tenant name, if left empty it will be ALL or *",
+          "type": "string",
+          "default": "*"
+        }
+      }
+    },
+    "PermissionUsers": {
+      "description": "resources applicable for user actions",
+      "type": "object",
+      "properties": {
+        "users": {
+          "description": "string or regex. if a specific name, if left empty it will be ALL or *",
+          "type": "string",
+          "default": "*"
+        }
+      }
+    },
     "PhoneNumber": {
       "properties": {
         "countryCode": {
@@ -10394,6 +14394,9 @@ func init() {
             "type": "string"
           }
         },
+        "userType": {
+          "$ref": "#/definitions/UserTypeInput"
+        },
         "username": {
           "description": "The username that was extracted either from the authentication information",
           "type": "string"
@@ -10404,7 +14407,7 @@ func init() {
       "type": "object",
       "properties": {
         "dataType": {
-          "description": "Can be a reference to another type when it starts with a capital (for example Person), otherwise \"string\" or \"int\".",
+          "description": "Data type of the property (required). If it starts with a capital (for example Person), may be a reference to another type.",
           "type": "array",
           "items": {
             "type": "string"
@@ -10415,17 +14418,17 @@ func init() {
           "type": "string"
         },
         "indexFilterable": {
-          "description": "Optional. Should this property be indexed in the inverted index. Defaults to true. If you choose false, you will not be able to use this property in where filters. This property has no affect on vectorization decisions done by modules",
+          "description": "Whether to include this property in the filterable, Roaring Bitmap index. If ` + "`" + `false` + "`" + `, this property cannot be used in ` + "`" + `where` + "`" + ` filters. \u003cbr/\u003e\u003cbr/\u003eNote: Unrelated to vectorization behavior.",
           "type": "boolean",
           "x-nullable": true
         },
         "indexInverted": {
-          "description": "Optional. Should this property be indexed in the inverted index. Defaults to true. If you choose false, you will not be able to use this property in where filters, bm25 or hybrid search. This property has no affect on vectorization decisions done by modules (deprecated as of v1.19; use indexFilterable or/and indexSearchable instead)",
+          "description": "(Deprecated). Whether to include this property in the inverted index. If ` + "`" + `false` + "`" + `, this property cannot be used in ` + "`" + `where` + "`" + ` filters, ` + "`" + `bm25` + "`" + ` or ` + "`" + `hybrid` + "`" + ` search. \u003cbr/\u003e\u003cbr/\u003eUnrelated to vectorization behavior (deprecated as of v1.19; use indexFilterable or/and indexSearchable instead)",
           "type": "boolean",
           "x-nullable": true
         },
         "indexRangeFilters": {
-          "description": "Optional. Should this property be indexed in the inverted index. Defaults to false. Provides better performance for range queries compared to filterable index in large datasets. Applicable only to properties of data type int, number, date.",
+          "description": "Whether to include this property in the filterable, range-based Roaring Bitmap index. Provides better performance for range queries compared to filterable index in large datasets. Applicable only to properties of data type int, number, date.",
           "type": "boolean",
           "x-nullable": true
         },
@@ -10439,7 +14442,7 @@ func init() {
           "type": "object"
         },
         "name": {
-          "description": "Name of the property as URI relative to the schema URL.",
+          "description": "The name of the property (required). Multiple words should be concatenated in camelCase, e.g. ` + "`" + `nameOfAuthor` + "`" + `.",
           "type": "string"
         },
         "nestedProperties": {
@@ -10461,13 +14464,14 @@ func init() {
             "trigram",
             "gse",
             "kagome_kr",
-            "kagome_ja"
+            "kagome_ja",
+            "gse_ch"
           ]
         }
       }
     },
     "PropertySchema": {
-      "description": "This is an open object, with OpenAPI Specification 3.0 this will be more detailed. See Weaviate docs for more info. In the future this will become a key/value OR a SingleRef definition.",
+      "description": "Names and values of an individual property. A returned response may also contain additional metadata, such as from classification or feature projection.",
       "type": "object"
     },
     "RaftStatistics": {
@@ -10593,22 +14597,141 @@ func init() {
       "type": "object",
       "properties": {
         "asyncEnabled": {
-          "description": "Enable asynchronous replication",
+          "description": "Enable asynchronous replication (default: false).",
           "type": "boolean",
           "x-omitempty": false
         },
         "deletionStrategy": {
-          "description": "Conflict resolution strategy for deleted objects",
+          "description": "Conflict resolution strategy for deleted objects.",
           "type": "string",
           "enum": [
             "NoAutomatedResolution",
-            "DeleteOnConflict"
+            "DeleteOnConflict",
+            "TimeBasedResolution"
           ],
           "x-omitempty": true
         },
         "factor": {
-          "description": "Number of times a class is replicated",
+          "description": "Number of times a class is replicated (default: 1).",
           "type": "integer"
+        }
+      }
+    },
+    "ReplicationDeleteReplicaRequest": {
+      "description": "Request body to delete a replica of given shard of a given collection",
+      "type": "object",
+      "required": [
+        "nodeName",
+        "collectionId",
+        "shardId"
+      ],
+      "properties": {
+        "collectionId": {
+          "description": "The collection name holding the replica to be delete",
+          "type": "string"
+        },
+        "nodeName": {
+          "description": "The node containing the replica to be deleted",
+          "type": "string"
+        },
+        "shardId": {
+          "description": "The shard id holding the replica to be deleted",
+          "type": "string"
+        }
+      }
+    },
+    "ReplicationDisableReplicaRequest": {
+      "description": "Request body to disable (soft-delete) a replica of given shard of a given collection",
+      "type": "object",
+      "required": [
+        "nodeName",
+        "collectionId",
+        "shardId"
+      ],
+      "properties": {
+        "collectionId": {
+          "description": "The collection name holding the replica to be disabled",
+          "type": "string"
+        },
+        "nodeName": {
+          "description": "The node containing the replica to be disabled",
+          "type": "string"
+        },
+        "shardId": {
+          "description": "The shard id holding the replica to be disabled",
+          "type": "string"
+        }
+      }
+    },
+    "ReplicationReplicateDetailsReplicaResponse": {
+      "description": "The current status and details of a replication operation, including information about the resources involved in the replication process.",
+      "required": [
+        "id",
+        "shardId",
+        "sourceNodeId",
+        "targetNodeId",
+        "collection",
+        "status"
+      ],
+      "properties": {
+        "collection": {
+          "description": "The name of the collection holding data being replicated.",
+          "type": "string"
+        },
+        "id": {
+          "description": "The unique id of the replication operation.",
+          "type": "string"
+        },
+        "shardId": {
+          "description": "The id of the shard to collect replication details for.",
+          "type": "string"
+        },
+        "sourceNodeId": {
+          "description": "The id of the node where the source replica is allocated.",
+          "type": "string"
+        },
+        "status": {
+          "description": "The current status of the replication operation, indicating the replication phase the operation is in.",
+          "type": "string",
+          "enum": [
+            "READY",
+            "INDEXING",
+            "REPLICATION_FINALIZING",
+            "REPLICATION_HYDRATING",
+            "REPLICATION_DEHYDRATING"
+          ]
+        },
+        "targetNodeId": {
+          "description": "The id of the node where the target replica is allocated.",
+          "type": "string"
+        }
+      }
+    },
+    "ReplicationReplicateReplicaRequest": {
+      "description": "Request body to add a replica of given shard of a given collection",
+      "type": "object",
+      "required": [
+        "sourceNodeName",
+        "destinationNodeName",
+        "collectionId",
+        "shardId"
+      ],
+      "properties": {
+        "collectionId": {
+          "description": "The collection name holding the shard",
+          "type": "string"
+        },
+        "destinationNodeName": {
+          "description": "The node to add a copy of the replica on",
+          "type": "string"
+        },
+        "shardId": {
+          "description": "The shard id holding the replica to be copied",
+          "type": "string"
+        },
+        "sourceNodeName": {
+          "description": "The node containing the replica",
+          "type": "string"
         }
       }
     },
@@ -10616,6 +14739,10 @@ func init() {
       "description": "Backup custom configuration",
       "type": "object",
       "properties": {
+        "Bucket": {
+          "description": "Name of the bucket, container, volume, etc",
+          "type": "string"
+        },
         "CPUPercentage": {
           "description": "Desired CPU core utilization ranging from 1%-80%",
           "type": "integer",
@@ -10623,7 +14750,43 @@ func init() {
           "maximum": 80,
           "minimum": 1,
           "x-nullable": false
+        },
+        "Endpoint": {
+          "description": "name of the endpoint, e.g. s3.amazonaws.com",
+          "type": "string"
+        },
+        "Path": {
+          "description": "Path within the bucket",
+          "type": "string"
         }
+      }
+    },
+    "Role": {
+      "type": "object",
+      "required": [
+        "name",
+        "permissions"
+      ],
+      "properties": {
+        "name": {
+          "description": "role name",
+          "type": "string"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "description": "list of permissions (level, action, resource)",
+            "type": "object",
+            "$ref": "#/definitions/Permission"
+          }
+        }
+      }
+    },
+    "RolesListResponse": {
+      "description": "list of roles",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Role"
       }
     },
     "Schema": {
@@ -10805,18 +14968,18 @@ func init() {
       "type": "object",
       "properties": {
         "additions": {
-          "description": "stopwords to be considered additionally",
+          "description": "Stopwords to be considered additionally (default: []). Can be any array of custom strings.",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "preset": {
-          "description": "pre-existing list of common words by language",
+          "description": "Pre-existing list of common words by language (default: 'en'). Options: ['en', 'none'].",
           "type": "string"
         },
         "removals": {
-          "description": "stopwords to be removed from consideration",
+          "description": "Stopwords to be removed from consideration (default: []). Can be any array of custom strings.",
           "type": "array",
           "items": {
             "type": "string"
@@ -10845,18 +15008,90 @@ func init() {
           ]
         },
         "name": {
-          "description": "name of the tenant",
+          "description": "The name of the tenant (required).",
           "type": "string"
         }
       }
     },
-    "Vector": {
-      "description": "A Vector object",
-      "type": "array",
-      "items": {
-        "type": "number",
-        "format": "float"
+    "TenantResponse": {
+      "description": "attributes representing a single tenant response within weaviate",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Tenant"
+        },
+        {
+          "properties": {
+            "belongsToNodes": {
+              "description": "The list of nodes that owns that tenant data.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "UserApiKey": {
+      "type": "object",
+      "required": [
+        "apikey"
+      ],
+      "properties": {
+        "apikey": {
+          "description": "The apikey",
+          "type": "string"
+        }
       }
+    },
+    "UserOwnInfo": {
+      "type": "object",
+      "required": [
+        "username"
+      ],
+      "properties": {
+        "groups": {
+          "description": "The groups associated to the user",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "description": "The roles assigned to own user",
+            "type": "object",
+            "$ref": "#/definitions/Role"
+          }
+        },
+        "username": {
+          "description": "The username associated with the provided key",
+          "type": "string"
+        }
+      }
+    },
+    "UserTypeInput": {
+      "description": "the type of user",
+      "type": "string",
+      "enum": [
+        "db",
+        "oidc"
+      ]
+    },
+    "UserTypeOutput": {
+      "description": "the type of user",
+      "type": "string",
+      "enum": [
+        "db_user",
+        "db_env_user",
+        "oidc"
+      ]
+    },
+    "Vector": {
+      "description": "A vector representation of the object. If provided at object creation, this wil take precedence over any vectorizer setting.",
+      "type": "object"
     },
     "VectorConfig": {
       "type": "object",
@@ -10880,7 +15115,7 @@ func init() {
       "type": "object"
     },
     "Vectors": {
-      "description": "A Multi Vector map of named vectors",
+      "description": "A map of named vectors for multi-vector representations.",
       "type": "object",
       "additionalProperties": {
         "$ref": "#/definitions/Vector"
@@ -11078,13 +15313,13 @@ func init() {
   "parameters": {
     "CommonAfterParameterQuery": {
       "type": "string",
-      "description": "The starting ID of the result window.",
+      "description": "A threshold UUID of the objects to retrieve after, using an UUID-based ordering. This object is not part of the set. \u003cbr/\u003e\u003cbr/\u003eMust be used with ` + "`" + `class` + "`" + `, typically in conjunction with ` + "`" + `limit` + "`" + `. \u003cbr/\u003e\u003cbr/\u003eNote ` + "`" + `after` + "`" + ` cannot be used with ` + "`" + `offset` + "`" + ` or ` + "`" + `sort` + "`" + `. \u003cbr/\u003e\u003cbr/\u003eFor a null value similar to offset=0, set an empty string in the request, i.e. ` + "`" + `after=` + "`" + ` or ` + "`" + `after` + "`" + `.",
       "name": "after",
       "in": "query"
     },
     "CommonClassParameterQuery": {
       "type": "string",
-      "description": "Class parameter specifies the class from which to query objects",
+      "description": "The collection from which to query objects.  \u003cbr/\u003e\u003cbr/\u003eNote that if ` + "`" + `class` + "`" + ` is not provided, the response will not include any objects.",
       "name": "class",
       "in": "query"
     },
@@ -11103,7 +15338,7 @@ func init() {
     "CommonLimitParameterQuery": {
       "type": "integer",
       "format": "int64",
-      "description": "The maximum number of items to be returned per page. Default value is set in Weaviate config.",
+      "description": "The maximum number of items to be returned per page. The default is 25 unless set otherwise as an environment variable.",
       "name": "limit",
       "in": "query"
     },
@@ -11117,13 +15352,13 @@ func init() {
       "type": "integer",
       "format": "int64",
       "default": 0,
-      "description": "The starting index of the result window. Default value is 0.",
+      "description": "The starting index of the result window. Note ` + "`" + `offset` + "`" + ` will retrieve ` + "`" + `offset+limit` + "`" + ` results and return ` + "`" + `limit` + "`" + ` results from the object with index ` + "`" + `offset` + "`" + ` onwards. Limited by the value of ` + "`" + `QUERY_MAXIMUM_RESULTS` + "`" + `. \u003cbr/\u003e\u003cbr/\u003eShould be used in conjunction with ` + "`" + `limit` + "`" + `. \u003cbr/\u003e\u003cbr/\u003eCannot be used with ` + "`" + `after` + "`" + `.",
       "name": "offset",
       "in": "query"
     },
     "CommonOrderParameterQuery": {
       "type": "string",
-      "description": "Order parameter to tell how to order (asc or desc) data within given field",
+      "description": "Order parameter to tell how to order (asc or desc) data within given field. Should be used in conjunction with ` + "`" + `sort` + "`" + ` parameter. If providing multiple ` + "`" + `sort` + "`" + ` values, provide multiple ` + "`" + `order` + "`" + ` values in corresponding order, e.g.: ` + "`" + `sort=author_name,title\u0026order=desc,asc` + "`" + `.",
       "name": "order",
       "in": "query"
     },
@@ -11136,7 +15371,7 @@ func init() {
     },
     "CommonSortParameterQuery": {
       "type": "string",
-      "description": "Sort parameter to pass an information about the names of the sort fields",
+      "description": "Name(s) of the property to sort by - e.g. ` + "`" + `city` + "`" + `, or ` + "`" + `country,city` + "`" + `.",
       "name": "sort",
       "in": "query"
     },

@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/weaviate/weaviate/usecases/config"
 	"github.com/weaviate/weaviate/usecases/memwatch"
 
 	"github.com/go-openapi/strfmt"
@@ -50,6 +51,7 @@ func TestIndexByTimestampsNullStatePropLength_AddClass(t *testing.T) {
 			IndexTimestamps:     true,
 			IndexNullState:      true,
 			IndexPropertyLength: true,
+			UsingBlockMaxWAND:   config.DefaultUsingBlockMaxWAND,
 		},
 		Properties: []*models.Property{
 			{
@@ -150,7 +152,7 @@ func TestIndexByTimestampsNullStatePropLength_AddClass(t *testing.T) {
 			Properties: map[string]interface{}{"initialWithIINil": "0", "initialWithIITrue": "0", "initialWithoutII": "1", "updateWithIINil": "2", "updateWithIITrue": "2", "updateWithoutII": "3"},
 		}
 		vec := []float32{1, 2, 3}
-		require.Nil(t, repo.PutObject(context.Background(), objWithProperty, vec, nil, nil, 0))
+		require.Nil(t, repo.PutObject(context.Background(), objWithProperty, vec, nil, nil, nil, 0))
 
 		testID2 := strfmt.UUID("a0b55b05-bc5b-4cc9-b646-1452d1390a63")
 		objWithoutProperty := &models.Object{
@@ -158,7 +160,7 @@ func TestIndexByTimestampsNullStatePropLength_AddClass(t *testing.T) {
 			Class:      "TestClass",
 			Properties: map[string]interface{}{},
 		}
-		require.Nil(t, repo.PutObject(context.Background(), objWithoutProperty, vec, nil, nil, 0))
+		require.Nil(t, repo.PutObject(context.Background(), objWithoutProperty, vec, nil, nil, nil, 0))
 
 		testID3 := strfmt.UUID("a0b55b05-bc5b-4cc9-b646-1452d1390a64")
 		objWithNilProperty := &models.Object{
@@ -166,7 +168,7 @@ func TestIndexByTimestampsNullStatePropLength_AddClass(t *testing.T) {
 			Class:      "TestClass",
 			Properties: map[string]interface{}{"initialWithIINil": nil, "initialWithIITrue": nil, "initialWithoutII": nil, "updateWithIINil": nil, "updateWithIITrue": nil, "updateWithoutII": nil},
 		}
-		require.Nil(t, repo.PutObject(context.Background(), objWithNilProperty, vec, nil, nil, 0))
+		require.Nil(t, repo.PutObject(context.Background(), objWithNilProperty, vec, nil, nil, nil, 0))
 	})
 
 	t.Run("delete class", func(t *testing.T) {
@@ -222,6 +224,7 @@ func TestIndexNullState_GetClass(t *testing.T) {
 				IndexNullState:      true,
 				IndexTimestamps:     true,
 				IndexPropertyLength: true,
+				UsingBlockMaxWAND:   config.DefaultUsingBlockMaxWAND,
 			},
 			Properties: []*models.Property{
 				{
@@ -238,6 +241,7 @@ func TestIndexNullState_GetClass(t *testing.T) {
 			InvertedIndexConfig: &models.InvertedIndexConfig{
 				IndexTimestamps:     true,
 				IndexPropertyLength: true,
+				UsingBlockMaxWAND:   config.DefaultUsingBlockMaxWAND,
 			},
 			Properties: []*models.Property{
 				{
@@ -302,7 +306,7 @@ func TestIndexNullState_GetClass(t *testing.T) {
 				},
 			},
 		} {
-			err := repo.PutObject(context.Background(), obj, vec, nil, nil, 0)
+			err := repo.PutObject(context.Background(), obj, vec, nil, nil, nil, 0)
 			require.Nil(t, err)
 		}
 	})
@@ -487,6 +491,7 @@ func TestIndexPropLength_GetClass(t *testing.T) {
 			InvertedIndexConfig: &models.InvertedIndexConfig{
 				IndexPropertyLength: true,
 				IndexTimestamps:     true,
+				UsingBlockMaxWAND:   config.DefaultUsingBlockMaxWAND,
 			},
 			Properties: []*models.Property{
 				{
@@ -505,7 +510,8 @@ func TestIndexPropLength_GetClass(t *testing.T) {
 			Class:             "RefClass",
 			VectorIndexConfig: enthnsw.NewDefaultUserConfig(),
 			InvertedIndexConfig: &models.InvertedIndexConfig{
-				IndexTimestamps: true,
+				IndexTimestamps:   true,
+				UsingBlockMaxWAND: config.DefaultUsingBlockMaxWAND,
 			},
 			Properties: []*models.Property{
 				{
@@ -572,7 +578,7 @@ func TestIndexPropLength_GetClass(t *testing.T) {
 				},
 			},
 		} {
-			err := repo.PutObject(context.Background(), obj, vec, nil, nil, 0)
+			err := repo.PutObject(context.Background(), obj, vec, nil, nil, nil, 0)
 			require.Nil(t, err)
 		}
 	})
@@ -840,6 +846,7 @@ func TestIndexByTimestamps_GetClass(t *testing.T) {
 			InvertedIndexConfig: &models.InvertedIndexConfig{
 				IndexTimestamps:     true,
 				IndexPropertyLength: true,
+				UsingBlockMaxWAND:   config.DefaultUsingBlockMaxWAND,
 			},
 			Properties: []*models.Property{
 				{
@@ -856,6 +863,7 @@ func TestIndexByTimestamps_GetClass(t *testing.T) {
 			InvertedIndexConfig: &models.InvertedIndexConfig{
 				IndexTimestamps:     true,
 				IndexPropertyLength: true,
+				UsingBlockMaxWAND:   config.DefaultUsingBlockMaxWAND,
 			},
 			Properties: []*models.Property{
 				{
@@ -924,7 +932,7 @@ func TestIndexByTimestamps_GetClass(t *testing.T) {
 				},
 			},
 		} {
-			err := repo.PutObject(context.Background(), obj, vec, nil, nil, 0)
+			err := repo.PutObject(context.Background(), obj, vec, nil, nil, nil, 0)
 			require.Nil(t, err)
 		}
 	})

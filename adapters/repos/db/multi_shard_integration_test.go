@@ -21,6 +21,7 @@ import (
 	"math/rand"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/go-openapi/strfmt"
 	"github.com/google/uuid"
@@ -39,6 +40,7 @@ import (
 	"github.com/weaviate/weaviate/entities/searchparams"
 	enthnsw "github.com/weaviate/weaviate/entities/vectorindex/hnsw"
 	"github.com/weaviate/weaviate/entities/verbosity"
+	"github.com/weaviate/weaviate/usecases/config"
 	"github.com/weaviate/weaviate/usecases/objects"
 	"github.com/weaviate/weaviate/usecases/sharding"
 )
@@ -59,7 +61,7 @@ func Test_MultiShardJourneys_IndividualImports(t *testing.T) {
 
 	t.Run("import all individually", func(t *testing.T) {
 		for _, obj := range data {
-			require.Nil(t, repo.PutObject(context.Background(), obj, obj.Vector, nil, nil, 0))
+			require.Nil(t, repo.PutObject(context.Background(), obj, obj.Vector, nil, nil, nil, 0))
 		}
 	})
 
@@ -72,7 +74,7 @@ func Test_MultiShardJourneys_IndividualImports(t *testing.T) {
 
 	t.Run("import refs individually", func(t *testing.T) {
 		for _, obj := range refData {
-			require.Nil(t, repo.PutObject(context.Background(), obj, obj.Vector, nil, nil, 0))
+			require.Nil(t, repo.PutObject(context.Background(), obj, obj.Vector, nil, nil, nil, 0))
 		}
 	})
 
@@ -126,7 +128,7 @@ func Test_MultiShardJourneys_BatchedImports(t *testing.T) {
 				Properties: map[string]interface{}{}, // empty so we remove the ref
 			}
 
-			require.Nil(t, repo.PutObject(context.Background(), withoutRef, withoutRef.Vector, nil, nil, 0))
+			require.Nil(t, repo.PutObject(context.Background(), withoutRef, withoutRef.Vector, nil, nil, nil, 0))
 		}
 
 		index := 0
@@ -166,6 +168,7 @@ func Test_MultiShardJourneys_BM25_Search(t *testing.T) {
 			VectorIndexConfig: enthnsw.NewDefaultUserConfig(),
 			InvertedIndexConfig: &models.InvertedIndexConfig{
 				CleanupIntervalSeconds: 60,
+				UsingBlockMaxWAND:      config.DefaultUsingBlockMaxWAND,
 			},
 			Properties: []*models.Property{
 				{
@@ -415,7 +418,7 @@ func makeTestRetrievingBaseClass(repo *DB, data []*models.Object,
 						Limit: limit,
 					},
 					ClassName: "TestClass",
-				}, []string{""}, [][]float32{queryVec})
+				}, []string{""}, []models.Vector{queryVec})
 				assert.Nil(t, err)
 				assert.Len(t, res, expected)
 				for i, obj := range res {
@@ -711,7 +714,7 @@ func makeTestBatchDeleteAllObjects(repo *DB) func(t *testing.T) {
 			beforeDelete := len(res)
 			require.True(t, beforeDelete > 0)
 			// dryRun == true
-			batchDeleteRes, err := repo.BatchDeleteObjects(context.Background(), getParams(className, true), nil, "", 0)
+			batchDeleteRes, err := repo.BatchDeleteObjects(context.Background(), getParams(className, true), time.Now(), nil, "", 0)
 			require.Nil(t, err)
 			require.Equal(t, int64(beforeDelete), batchDeleteRes.Matches)
 			require.Equal(t, beforeDelete, len(batchDeleteRes.Objects))
@@ -723,7 +726,7 @@ func makeTestBatchDeleteAllObjects(repo *DB) func(t *testing.T) {
 			require.Nil(t, err)
 			require.Equal(t, beforeDelete, len(res))
 			// dryRun == false, perform actual delete
-			batchDeleteRes, err = repo.BatchDeleteObjects(context.Background(), getParams(className, false), nil, "", 0)
+			batchDeleteRes, err = repo.BatchDeleteObjects(context.Background(), getParams(className, false), time.Now(), nil, "", 0)
 			require.Nil(t, err)
 			require.Equal(t, int64(beforeDelete), batchDeleteRes.Matches)
 			require.Equal(t, beforeDelete, len(batchDeleteRes.Objects))

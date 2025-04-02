@@ -18,8 +18,11 @@ import (
 	"io"
 	"math/rand"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/weaviate/weaviate/entities/dto"
+	"github.com/weaviate/weaviate/entities/models"
 
 	"github.com/go-openapi/strfmt"
 	"github.com/sirupsen/logrus"
@@ -75,13 +78,13 @@ type RemoteIndexClient interface {
 	Exists(ctx context.Context, hostname, indexName, shardName string,
 		id strfmt.UUID) (bool, error)
 	DeleteObject(ctx context.Context, hostname, indexName, shardName string,
-		id strfmt.UUID, schemaVersion uint64) error
+		id strfmt.UUID, deletionTime time.Time, schemaVersion uint64) error
 	MergeObject(ctx context.Context, hostname, indexName, shardName string,
 		mergeDoc objects.MergeDocument, schemaVersion uint64) error
 	MultiGetObjects(ctx context.Context, hostname, indexName, shardName string,
 		ids []strfmt.UUID) ([]*storobj.Object, error)
 	SearchShard(ctx context.Context, hostname, indexName, shardName string,
-		searchVector [][]float32, targetVector []string, limit int, filters *filters.LocalFilter,
+		searchVector []models.Vector, targetVector []string, distance float32, limit int, filters *filters.LocalFilter,
 		keywordRanking *searchparams.KeywordRanking, sort []filters.Sort,
 		cursor *filters.Cursor, groupBy *searchparams.GroupBy,
 		additional additional.Properties, targetCombination *dto.TargetCombination, properties []string,
@@ -92,13 +95,21 @@ type RemoteIndexClient interface {
 	FindUUIDs(ctx context.Context, hostName, indexName, shardName string,
 		filters *filters.LocalFilter) ([]strfmt.UUID, error)
 	DeleteObjectBatch(ctx context.Context, hostName, indexName, shardName string,
-		uuids []strfmt.UUID, dryRun bool, schemaVersion uint64) objects.BatchSimpleObjects
+		uuids []strfmt.UUID, deletionTime time.Time, dryRun bool, schemaVersion uint64) objects.BatchSimpleObjects
 	GetShardQueueSize(ctx context.Context, hostName, indexName, shardName string) (int64, error)
 	GetShardStatus(ctx context.Context, hostName, indexName, shardName string) (string, error)
 	UpdateShardStatus(ctx context.Context, hostName, indexName, shardName, targetStatus string, schemaVersion uint64) error
 
 	PutFile(ctx context.Context, hostName, indexName, shardName, fileName string,
 		payload io.ReadSeekCloser) error
+	// PauseAndListFiles pauses the shard replica background processes on the specified node and
+	// returns a list of files that can be used to get the shard data at the time the pause was
+	// requested. You should explicitly resume the background processes once you're done.
+	// The returned relative file paths are relative to the shard's root directory.
+	PauseAndListFiles(ctx context.Context, hostName, indexName, shardName string) ([]string, error)
+	// GetFile returns a reader for the file at the given path in the shard's root directory.
+	// The caller must close the returned io.ReadCloser if no error is returned.
+	GetFile(ctx context.Context, hostName, indexName, shardName, fileName string) (io.ReadCloser, error)
 }
 
 func (ri *RemoteIndex) PutObject(ctx context.Context, shardName string,
@@ -180,7 +191,7 @@ func (ri *RemoteIndex) Exists(ctx context.Context, shardName string,
 }
 
 func (ri *RemoteIndex) DeleteObject(ctx context.Context, shardName string,
-	id strfmt.UUID, schemaVersion uint64,
+	id strfmt.UUID, deletionTime time.Time, schemaVersion uint64,
 ) error {
 	owner, err := ri.stateGetter.ShardOwner(ri.class, shardName)
 	if err != nil {
@@ -192,7 +203,7 @@ func (ri *RemoteIndex) DeleteObject(ctx context.Context, shardName string,
 		return fmt.Errorf("resolve node name %q to host", owner)
 	}
 
-	return ri.client.DeleteObject(ctx, host, ri.class, shardName, id, schemaVersion)
+	return ri.client.DeleteObject(ctx, host, ri.class, shardName, id, deletionTime, schemaVersion)
 }
 
 func (ri *RemoteIndex) MergeObject(ctx context.Context, shardName string,
@@ -253,8 +264,9 @@ type ReplicasSearchResult struct {
 func (ri *RemoteIndex) SearchAllReplicas(ctx context.Context,
 	log logrus.FieldLogger,
 	shard string,
-	queryVec [][]float32,
+	queryVec []models.Vector,
 	targetVector []string,
+	distance float32,
 	limit int,
 	filters *filters.LocalFilter,
 	keywordRanking *searchparams.KeywordRanking,
@@ -269,7 +281,7 @@ func (ri *RemoteIndex) SearchAllReplicas(ctx context.Context,
 ) ([]ReplicasSearchResult, error) {
 	remoteShardQuery := func(node, host string) (ReplicasSearchResult, error) {
 		objs, scores, err := ri.client.SearchShard(ctx, host, ri.class, shard,
-			queryVec, targetVector, limit, filters, keywordRanking, sort, cursor, groupBy, adds, targetCombination, properties)
+			queryVec, targetVector, distance, limit, filters, keywordRanking, sort, cursor, groupBy, adds, targetCombination, properties)
 		if err != nil {
 			return ReplicasSearchResult{}, err
 		}
@@ -279,8 +291,9 @@ func (ri *RemoteIndex) SearchAllReplicas(ctx context.Context,
 }
 
 func (ri *RemoteIndex) SearchShard(ctx context.Context, shard string,
-	queryVec [][]float32,
+	queryVec []models.Vector,
 	targetVector []string,
+	distance float32,
 	limit int,
 	filters *filters.LocalFilter,
 	keywordRanking *searchparams.KeywordRanking,
@@ -298,7 +311,7 @@ func (ri *RemoteIndex) SearchShard(ctx context.Context, shard string,
 	}
 	f := func(node, host string) (interface{}, error) {
 		objs, scores, err := ri.client.SearchShard(ctx, host, ri.class, shard,
-			queryVec, targetVector, limit, filters, keywordRanking, sort, cursor, groupBy, adds, targetCombination, properties)
+			queryVec, targetVector, distance, limit, filters, keywordRanking, sort, cursor, groupBy, adds, targetCombination, properties)
 		if err != nil {
 			return nil, err
 		}
@@ -348,7 +361,7 @@ func (ri *RemoteIndex) FindUUIDs(ctx context.Context, shardName string,
 }
 
 func (ri *RemoteIndex) DeleteObjectBatch(ctx context.Context, shardName string,
-	uuids []strfmt.UUID, dryRun bool, schemaVersion uint64,
+	uuids []strfmt.UUID, deletionTime time.Time, dryRun bool, schemaVersion uint64,
 ) objects.BatchSimpleObjects {
 	owner, err := ri.stateGetter.ShardOwner(ri.class, shardName)
 	if err != nil {
@@ -362,7 +375,7 @@ func (ri *RemoteIndex) DeleteObjectBatch(ctx context.Context, shardName string,
 		return objects.BatchSimpleObjects{objects.BatchSimpleObject{Err: err}}
 	}
 
-	return ri.client.DeleteObjectBatch(ctx, host, ri.class, shardName, uuids, dryRun, schemaVersion)
+	return ri.client.DeleteObjectBatch(ctx, host, ri.class, shardName, uuids, deletionTime, dryRun, schemaVersion)
 }
 
 func (ri *RemoteIndex) GetShardQueueSize(ctx context.Context, shardName string) (int64, error) {
@@ -427,6 +440,8 @@ func (ri *RemoteIndex) queryAllReplicas(
 		return do(replica, host)
 	}
 
+	var queriesSent atomic.Int64
+
 	queryAll := func(replicas []string) (resp []ReplicasSearchResult, err error) {
 		var mu sync.Mutex // protect resp + errlist
 		var searchResult ReplicasSearchResult
@@ -451,6 +466,7 @@ func (ri *RemoteIndex) queryAllReplicas(
 					return
 				}
 
+				queriesSent.Add(1)
 				if searchResult, err = queryOne(node); err != nil {
 					mu.Lock()
 					errList = errors.Join(errList, fmt.Errorf("error while searching shard=%s replica node=%s: %w", shard, node, err))
@@ -473,8 +489,8 @@ func (ri *RemoteIndex) queryAllReplicas(
 		if len(resp) == 0 {
 			return nil, errList
 		}
-		if len(resp) != len(replicas)-1 {
-			log.Warnf("full replicas search has less results than the count of replicas: have=%d want=%d", len(resp), len(replicas)-1)
+		if len(resp) != int(queriesSent.Load()) {
+			log.Warnf("full replicas search response does not match replica count: response=%d replicas=%d", len(resp), len(replicas))
 		}
 		return resp, nil
 	}

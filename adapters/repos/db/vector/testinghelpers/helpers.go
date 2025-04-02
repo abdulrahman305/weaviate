@@ -12,6 +12,7 @@
 package testinghelpers
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
@@ -20,14 +21,16 @@ import (
 	"math/rand"
 	"os"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/sirupsen/logrus"
-
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/require"
+
+	"github.com/weaviate/weaviate/adapters/repos/db/helpers"
 	"github.com/weaviate/weaviate/adapters/repos/db/lsmkv"
 	"github.com/weaviate/weaviate/adapters/repos/db/vector/compressionhelpers"
 	"github.com/weaviate/weaviate/adapters/repos/db/vector/hnsw/distancer"
@@ -83,7 +86,7 @@ func readSiftFloat(file string, maxObjects int, vectorLengthFloat int) [][]float
 	vectorBytes := make([]byte, bytesPerF+vectorLengthFloat*bytesPerF)
 	for i := 0; i >= 0; i++ {
 		_, err = f.Read(vectorBytes)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
 			panic(err)
@@ -177,21 +180,37 @@ func ReadQueries(queriesSize int) [][]float32 {
 	return queries
 }
 
+// nil vectors are ignored, this allows for deleting vectors or supplying
+// sparse sets where not every id has a vec
 func BruteForce(logger logrus.FieldLogger, vectors [][]float32, query []float32, k int, distance DistanceFunction) ([]uint64, []float32) {
 	type distanceAndIndex struct {
 		distance float32
 		index    uint64
+		deleted  bool
 	}
 
 	distances := make([]distanceAndIndex, len(vectors))
 
 	compressionhelpers.Concurrently(logger, uint64(len(vectors)), func(i uint64) {
+		if vectors[i] == nil {
+			distances[i] = distanceAndIndex{deleted: true}
+			return
+		}
+
 		dist := distance(query, vectors[i])
 		distances[i] = distanceAndIndex{
 			index:    uint64(i),
 			distance: dist,
 		}
 	})
+
+	withoutDeletes := make([]distanceAndIndex, 0, len(distances))
+	for _, d := range distances {
+		if !d.deleted {
+			withoutDeletes = append(withoutDeletes, d)
+		}
+	}
+	distances = withoutDeletes
 
 	sort.Slice(distances, func(a, b int) bool {
 		return distances[a].distance < distances[b].distance
@@ -278,7 +297,43 @@ func NewDummyStore(t testing.TB) *lsmkv.Store {
 	logger, _ := test.NewNullLogger()
 	storeDir := t.TempDir()
 	store, err := lsmkv.New(storeDir, storeDir, logger, nil,
-		cyclemanager.NewCallbackGroupNoop(), cyclemanager.NewCallbackGroupNoop())
+		cyclemanager.NewCallbackGroupNoop(),
+		cyclemanager.NewCallbackGroupNoop(),
+		cyclemanager.NewCallbackGroupNoop())
 	require.Nil(t, err)
 	return store
+}
+
+type VectorIndex interface {
+	SearchByVector(ctx context.Context, vector []float32, k int, allow helpers.AllowList) ([]uint64, []float32, error)
+}
+
+func RecallAndLatency(ctx context.Context, queries [][]float32, k int, index VectorIndex, truths [][]uint64) (float32, float32) {
+	var relevant uint64
+	retrieved := k * len(queries)
+
+	var querying time.Duration = 0
+	mutex := &sync.Mutex{}
+	logger, _ := test.NewNullLogger()
+	compressionhelpers.Concurrently(logger, uint64(len(queries)), func(i uint64) {
+		before := time.Now()
+		results, _, _ := index.SearchByVector(ctx, queries[i], k, nil)
+		ellapsed := time.Since(before)
+		hits := MatchesInLists(truths[i], results)
+		mutex.Lock()
+		querying += ellapsed
+		relevant += hits
+		mutex.Unlock()
+	})
+
+	recall := float32(relevant) / float32(retrieved)
+	latency := float32(querying.Microseconds()) / float32(len(queries))
+	return recall, latency
+}
+
+func DistanceWrapper(provider distancer.Provider) func(x, y []float32) float32 {
+	return func(x, y []float32) float32 {
+		dist, _ := provider.SingleDist(x, y)
+		return dist
+	}
 }

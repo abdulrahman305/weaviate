@@ -80,7 +80,7 @@ func (s *segment) getBySecondaryIntoMemory(pos int, key []byte, buffer []byte) (
 		return nil, nil, nil, fmt.Errorf("get only possible for strategy %q", StrategyReplace)
 	}
 
-	if pos > len(s.secondaryIndices) || s.secondaryIndices[pos] == nil {
+	if pos >= len(s.secondaryIndices) || s.secondaryIndices[pos] == nil {
 		return nil, nil, nil, fmt.Errorf("no secondary index at pos %d", pos)
 	}
 
@@ -134,7 +134,13 @@ func (s *segment) replaceStratParseData(in []byte) ([]byte, []byte, error) {
 
 	// check the tombstone byte
 	if in[0] == 0x01 {
-		return nil, nil, lsmkv.Deleted
+		if len(in) < 9 {
+			return nil, nil, lsmkv.Deleted
+		}
+
+		valueLength := binary.LittleEndian.Uint64(in[1:9])
+
+		return nil, nil, errorFromTombstonedValue(in[9 : 9+valueLength])
 	}
 
 	valueLength := binary.LittleEndian.Uint64(in[1:9])

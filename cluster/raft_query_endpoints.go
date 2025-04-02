@@ -21,6 +21,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/getsentry/sentry-go"
 	"github.com/prometheus/client_golang/prometheus"
+
 	cmd "github.com/weaviate/weaviate/cluster/proto/api"
 	"github.com/weaviate/weaviate/cluster/schema"
 	"github.com/weaviate/weaviate/entities/models"
@@ -118,9 +119,38 @@ func (s *Raft) QuerySchema() (models.Schema, error) {
 	return resp.Schema, nil
 }
 
+// QueryCollectionsCount build a Query to read the schema that will be directed to the leader to ensure we will read the class
+// with strong consistency
+func (s *Raft) QueryCollectionsCount() (int, error) {
+	ctx := context.Background()
+	if entSentry.Enabled() {
+		transaction := sentry.StartSpan(ctx, "grpc.client",
+			sentry.WithTransactionName("raft.query.collections.count"),
+			sentry.WithDescription("Query the collections count"),
+		)
+		ctx = transaction.Context()
+		defer transaction.Finish()
+	}
+	command := &cmd.QueryRequest{
+		Type: cmd.QueryRequest_TYPE_GET_COLLECTIONS_COUNT,
+	}
+	queryResp, err := s.Query(ctx, command)
+	if err != nil {
+		return 0, fmt.Errorf("failed to execute query: %w", err)
+	}
+
+	// Unmarshal the response
+	resp := cmd.QueryCollectionsCountResponse{}
+	err = json.Unmarshal(queryResp.Payload, &resp)
+	if err != nil {
+		return 0, fmt.Errorf("failed to unmarshal query result: %w", err)
+	}
+	return resp.Count, nil
+}
+
 // QueryTenants build a Query to read the tenants of a given class that will be directed to the leader to ensure we
 // will read the class with strong consistency
-func (s *Raft) QueryTenants(class string, tenants []string) ([]*models.Tenant, uint64, error) {
+func (s *Raft) QueryTenants(class string, tenants []string) ([]*models.TenantResponse, uint64, error) {
 	ctx := context.Background()
 	if entSentry.Enabled() {
 		transaction := sentry.StartSpan(ctx, "grpc.client",
@@ -136,7 +166,7 @@ func (s *Raft) QueryTenants(class string, tenants []string) ([]*models.Tenant, u
 	req := cmd.QueryTenantsRequest{Class: class, Tenants: tenants}
 	subCommand, err := json.Marshal(&req)
 	if err != nil {
-		return []*models.Tenant{}, 0, fmt.Errorf("marshal request: %w", err)
+		return []*models.TenantResponse{}, 0, fmt.Errorf("marshal request: %w", err)
 	}
 	command := &cmd.QueryRequest{
 		Type:       cmd.QueryRequest_TYPE_GET_TENANTS,
@@ -144,14 +174,14 @@ func (s *Raft) QueryTenants(class string, tenants []string) ([]*models.Tenant, u
 	}
 	queryResp, err := s.Query(ctx, command)
 	if err != nil {
-		return []*models.Tenant{}, 0, fmt.Errorf("failed to execute query: %w", err)
+		return []*models.TenantResponse{}, 0, fmt.Errorf("failed to execute query: %w", err)
 	}
 
 	// Unmarshal the response
 	resp := cmd.QueryTenantsResponse{}
 	err = json.Unmarshal(queryResp.Payload, &resp)
 	if err != nil {
-		return []*models.Tenant{}, 0, fmt.Errorf("failed to unmarshal query result: %w", err)
+		return []*models.TenantResponse{}, 0, fmt.Errorf("failed to unmarshal query result: %w", err)
 	}
 
 	return resp.Tenants, resp.ShardVersion, nil
@@ -275,6 +305,64 @@ func (s *Raft) QueryShardingState(class string) (*sharding.State, uint64, error)
 	return resp.State, resp.Version, nil
 }
 
+// QueryClassVersions returns the current version of the requested classes.
+func (s *Raft) QueryClassVersions(classes ...string) (map[string]uint64, error) {
+	ctx := context.Background()
+	if entSentry.Enabled() {
+		transaction := sentry.StartSpan(ctx, "grpc.client",
+			sentry.WithTransactionName("raft.query.class_versions"),
+			sentry.WithDescription("Query class versions"),
+		)
+		transaction.SetData("classes", classes)
+		ctx = transaction.Context()
+		defer transaction.Finish()
+	}
+	if len(classes) == 0 {
+		return nil, fmt.Errorf("empty classes names: %w", schema.ErrBadRequest)
+	}
+
+	// remove dedup and empty
+	slices.Sort(classes)
+	classes = slices.Compact(classes)
+	if len(classes) == 0 {
+		return map[string]uint64{}, fmt.Errorf("empty classes names: %w", schema.ErrBadRequest)
+	}
+
+	if len(classes) > 1 && classes[0] == "" {
+		classes = classes[1:]
+	}
+
+	// Build the query and execute it
+	req := cmd.QueryClassVersionsRequest{Classes: classes}
+	subCommand, err := json.Marshal(&req)
+	if err != nil {
+		return map[string]uint64{}, fmt.Errorf("marshal request: %w", err)
+	}
+	command := &cmd.QueryRequest{
+		Type:       cmd.QueryRequest_TYPE_GET_CLASS_VERSIONS,
+		SubCommand: subCommand,
+	}
+	queryResp, err := s.Query(ctx, command)
+	if err != nil {
+		return map[string]uint64{}, fmt.Errorf("failed to execute query: %w", err)
+	}
+
+	// Empty payload doesn't unmarshal to an empty struct and will instead result in an error.
+	// We have an empty payload when the requested class if not present in the schema.
+	// In that case return a nil pointer and no error.
+	if len(queryResp.Payload) == 0 {
+		return nil, nil
+	}
+
+	// Unmarshal the response
+	resp := cmd.QueryClassVersionsResponse{}
+	err = json.Unmarshal(queryResp.Payload, &resp)
+	if err != nil {
+		return map[string]uint64{}, fmt.Errorf("failed to unmarshal query result: %w", err)
+	}
+	return resp.Classes, nil
+}
+
 // Query receives a QueryRequest and ensure it is executed on the leader and returns the related QueryResponse
 // If any error happens it returns it
 func (s *Raft) Query(ctx context.Context, req *cmd.QueryRequest) (*cmd.QueryResponse, error) {
@@ -284,31 +372,29 @@ func (s *Raft) Query(ctx context.Context, req *cmd.QueryRequest) (*cmd.QueryResp
 		))
 	defer t.ObserveDuration()
 
-	resp := &cmd.QueryResponse{}
-	err := backoff.Retry(func() error {
-		var err error
+	if s.store.IsLeader() {
+		return s.store.Query(req)
+	}
 
-		if s.store.IsLeader() {
-			resp, err = s.store.Query(req)
-			return err
-		}
-
-		leader := s.store.Leader()
-		if leader == "" {
-			err = s.leaderErr()
+	// find out who the leader is
+	var leader string
+	if err := backoff.Retry(func() error {
+		if leader = s.store.Leader(); leader == "" {
+			err := s.leaderErr()
 			s.log.Warnf("query: could not find leader: %s", err)
 			return err
 		}
 
-		resp, err = s.cl.Query(ctx, leader, req)
-		if err != nil {
-			s.log.WithField("leader", leader).Errorf("query: failed to query leader: %s", err)
-			// Don't retry if the actual query fails
-			return backoff.Permanent(err)
-		}
 		return nil
-		// Retry at most for 2 seconds, it shouldn't take longer for an election to take place
-	}, backoff.WithContext(backoff.WithMaxRetries(backoff.NewConstantBackOff(200*time.Millisecond), 10), ctx))
+	}, backoff.WithContext(backoff.WithMaxRetries(
+		backoff.NewConstantBackOff(200*time.Millisecond), 10), ctx)); err != nil {
+		s.log.Errorf("query: failed to find leader after retries: %s", err)
+		return &cmd.QueryResponse{}, err
+	}
 
+	resp, err := s.cl.Query(ctx, leader, req)
+	if err != nil {
+		s.log.WithField("leader", leader).Errorf("query: failed to query leader: %s", err)
+	}
 	return resp, err
 }

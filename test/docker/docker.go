@@ -34,7 +34,7 @@ func (d *DockerCompose) Containers() []*DockerContainer {
 func (d *DockerCompose) Terminate(ctx context.Context) error {
 	var errs error
 	for _, c := range d.containers {
-		if err := c.container.Terminate(ctx); err != nil {
+		if err := testcontainers.TerminateContainer(c.container, testcontainers.StopContext(ctx)); err != nil {
 			errs = errors.Wrapf(err, "cannot terminate: %v", c.name)
 		}
 	}
@@ -61,7 +61,7 @@ func (d *DockerCompose) Stop(ctx context.Context, container string, timeout *tim
 func (d *DockerCompose) TerminateContainer(ctx context.Context, container string) error {
 	for idx, c := range d.containers {
 		if c.name == container {
-			if err := c.container.Terminate(ctx); err != nil {
+			if err := testcontainers.TerminateContainer(c.container, testcontainers.StopContext(ctx)); err != nil {
 				return fmt.Errorf("cannot stop %q: %w", c.name, err)
 			}
 			d.containers = append(d.containers[:idx], d.containers[idx+1:]...)
@@ -146,6 +146,12 @@ func (d *DockerCompose) GetMinIO() *DockerContainer {
 	return d.getContainerByName(MinIO)
 }
 
+func (d *DockerCompose) StopMinIO(ctx context.Context) error {
+	minio := d.getContainerByName(MinIO)
+
+	return minio.container.Stop(ctx, nil)
+}
+
 func (d *DockerCompose) GetGCS() *DockerContainer {
 	return d.getContainerByName(GCS)
 }
@@ -195,6 +201,10 @@ func (d *DockerCompose) GetOllamaVectorizer() *DockerContainer {
 
 func (d *DockerCompose) GetOllamaGenerative() *DockerContainer {
 	return d.getContainerByName(OllamaGenerative)
+}
+
+func (d *DockerCompose) GetMockOIDC() *DockerContainer {
+	return d.getContainerByName(MockOIDC)
 }
 
 func (d *DockerCompose) getContainerByName(name string) *DockerContainer {

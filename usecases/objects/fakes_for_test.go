@@ -16,8 +16,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-
-	"github.com/weaviate/weaviate/entities/dto"
+	"time"
 
 	"github.com/go-openapi/strfmt"
 	"github.com/pkg/errors"
@@ -25,8 +24,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/tailor-inc/graphql"
 	"github.com/tailor-inc/graphql/language/ast"
+
 	"github.com/weaviate/weaviate/adapters/handlers/graphql/descriptions"
 	"github.com/weaviate/weaviate/entities/additional"
+	"github.com/weaviate/weaviate/entities/dto"
 	"github.com/weaviate/weaviate/entities/filters"
 	"github.com/weaviate/weaviate/entities/models"
 	"github.com/weaviate/weaviate/entities/modulecapabilities"
@@ -34,7 +35,6 @@ import (
 	"github.com/weaviate/weaviate/entities/schema"
 	"github.com/weaviate/weaviate/entities/schema/crossref"
 	"github.com/weaviate/weaviate/entities/search"
-	"github.com/weaviate/weaviate/entities/vectorindex/hnsw"
 	"github.com/weaviate/weaviate/entities/versioned"
 )
 
@@ -114,6 +114,19 @@ func (f *fakeSchemaManager) GetCachedClass(ctx context.Context,
 	return res, nil
 }
 
+func (f *fakeSchemaManager) GetCachedClassNoAuth(ctx context.Context, names ...string,
+) (map[string]versioned.Class, error) {
+	res := map[string]versioned.Class{}
+	for _, name := range names {
+		cls, err := f.GetClass(ctx, nil, name)
+		if err != nil {
+			return res, err
+		}
+		res[name] = versioned.Class{Class: cls}
+	}
+	return f.GetCachedClass(ctx, nil, names...)
+}
+
 func (f *fakeSchemaManager) ReadOnlyClass(name string) *models.Class {
 	c, err := f.GetClass(context.TODO(), nil, name)
 	if err != nil {
@@ -128,9 +141,6 @@ func (f *fakeSchemaManager) AddClass(ctx context.Context, principal *models.Prin
 	if f.GetSchemaResponse.Objects == nil {
 		f.GetSchemaResponse.Objects = schema.Empty().Objects
 	}
-	class.VectorIndexConfig = hnsw.UserConfig{}
-	class.VectorIndexType = "hnsw"
-	class.Vectorizer = "none"
 	classes := f.GetSchemaResponse.Objects.Classes
 	if classes != nil {
 		classes = append(classes, class)
@@ -142,7 +152,7 @@ func (f *fakeSchemaManager) AddClass(ctx context.Context, principal *models.Prin
 }
 
 func (f *fakeSchemaManager) AddClassProperty(ctx context.Context, principal *models.Principal,
-	class *models.Class, merge bool, newProps ...*models.Property,
+	class *models.Class, className string, merge bool, newProps ...*models.Property,
 ) (*models.Class, uint64, error) {
 	existing := map[string]int{}
 	var existedClass *models.Class
@@ -177,28 +187,12 @@ func (f *fakeSchemaManager) AddTenants(ctx context.Context,
 	return 0, nil
 }
 
-func (f *fakeSchemaManager) MultiTenancy(class string) models.MultiTenancyConfig {
-	return models.MultiTenancyConfig{Enabled: f.tenantsEnabled}
-}
-
 func (f *fakeSchemaManager) WaitForUpdate(ctx context.Context, schemaVersion uint64) error {
 	return nil
 }
 
 func (f *fakeSchemaManager) StorageCandidates() []string {
 	return []string{}
-}
-
-type fakeLocks struct {
-	Err error
-}
-
-func (f *fakeLocks) LockConnector() (func() error, error) {
-	return func() error { return nil }, f.Err
-}
-
-func (f *fakeLocks) LockSchema() (func() error, error) {
-	return func() error { return nil }, f.Err
 }
 
 type fakeVectorRepo struct {
@@ -241,12 +235,13 @@ func (f *fakeVectorRepo) ObjectSearch(ctx context.Context, offset, limit int, fi
 
 func (f *fakeVectorRepo) Query(ctx context.Context, q *QueryInput) (search.Results, *Error) {
 	args := f.Called(q)
-	res, err := args.Get(0).([]search.Result), args.Error(1).(*Error)
-	return res, err
+	var customEr *Error
+	errors.As(args.Error(1), &customEr)
+	return args.Get(0).([]search.Result), customEr
 }
 
 func (f *fakeVectorRepo) PutObject(ctx context.Context, concept *models.Object, vector []float32,
-	vectors models.Vectors, repl *additional.ReplicationProperties, schemaVersion uint64,
+	vectors map[string][]float32, multiVectors map[string][][]float32, repl *additional.ReplicationProperties, schemaVersion uint64,
 ) error {
 	args := f.Called(concept, vector)
 	return args.Error(0)
@@ -267,7 +262,7 @@ func (f *fakeVectorRepo) AddBatchReferences(ctx context.Context, batch BatchRefe
 }
 
 func (f *fakeVectorRepo) BatchDeleteObjects(ctx context.Context, params BatchDeleteParams,
-	repl *additional.ReplicationProperties, tenant string, schemaVersion uint64,
+	deletionTime time.Time, repl *additional.ReplicationProperties, tenant string, schemaVersion uint64,
 ) (BatchDeleteResult, error) {
 	args := f.Called(params)
 	return args.Get(0).(BatchDeleteResult), args.Error(1)
@@ -279,9 +274,9 @@ func (f *fakeVectorRepo) Merge(ctx context.Context, merge MergeDocument, repl *a
 }
 
 func (f *fakeVectorRepo) DeleteObject(ctx context.Context, className string,
-	id strfmt.UUID, repl *additional.ReplicationProperties, tenant string, schemaVersion uint64,
+	id strfmt.UUID, deletionTime time.Time, repl *additional.ReplicationProperties, tenant string, schemaVersion uint64,
 ) error {
-	args := f.Called(className, id)
+	args := f.Called(className, id, deletionTime)
 	return args.Error(0)
 }
 

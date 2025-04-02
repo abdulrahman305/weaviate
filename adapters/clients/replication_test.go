@@ -23,6 +23,7 @@ import (
 	"github.com/go-openapi/strfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/weaviate/weaviate/cluster/router/types"
 	"github.com/weaviate/weaviate/entities/additional"
 	"github.com/weaviate/weaviate/entities/models"
 	"github.com/weaviate/weaviate/entities/storobj"
@@ -160,32 +161,33 @@ func TestReplicationDeleteObject(t *testing.T) {
 
 	ctx := context.Background()
 	uuid := UUID1
-	path := "/replicas/indices/C1/shards/S1/objects/" + uuid.String()
+	deletionTime := time.Now()
+	path := fmt.Sprintf("/replicas/indices/C1/shards/S1/objects/%s/%d", uuid.String(), deletionTime.UnixMilli())
 	fs := newFakeReplicationServer(t, http.MethodDelete, path, 0)
 	ts := fs.server(t)
 	defer ts.Close()
 
 	client := newReplicationClient(ts.Client())
 	t.Run("ConnectionError", func(t *testing.T) {
-		_, err := client.DeleteObject(ctx, "", "C1", "S1", "", uuid, 0)
+		_, err := client.DeleteObject(ctx, "", "C1", "S1", "", uuid, deletionTime, 0)
 		assert.NotNil(t, err)
 		assert.Contains(t, err.Error(), "connect")
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		resp, err := client.DeleteObject(ctx, fs.host, "C1", "S1", RequestError, uuid, 0)
+		resp, err := client.DeleteObject(ctx, fs.host, "C1", "S1", RequestError, uuid, deletionTime, 0)
 		assert.Nil(t, err)
 		assert.Equal(t, replica.SimpleResponse{Errors: fs.RequestError.Errors}, resp)
 	})
 
 	t.Run("DecodeResponse", func(t *testing.T) {
-		_, err := client.DeleteObject(ctx, fs.host, "C1", "S1", RequestMalFormedResponse, uuid, 0)
+		_, err := client.DeleteObject(ctx, fs.host, "C1", "S1", RequestMalFormedResponse, uuid, deletionTime, 0)
 		assert.NotNil(t, err)
 		assert.Contains(t, err.Error(), "decode response")
 	})
 
 	t.Run("ServerInternalError", func(t *testing.T) {
-		_, err := client.DeleteObject(ctx, fs.host, "C1", "S1", RequestInternalError, uuid, 0)
+		_, err := client.DeleteObject(ctx, fs.host, "C1", "S1", RequestInternalError, uuid, deletionTime, 0)
 		assert.NotNil(t, err)
 		assert.Contains(t, err.Error(), "status code")
 	})
@@ -319,26 +321,28 @@ func TestReplicationDeleteObjects(t *testing.T) {
 	client := newReplicationClient(ts.Client())
 
 	uuids := []strfmt.UUID{strfmt.UUID("1"), strfmt.UUID("2")}
+	deletionTime := time.Now()
+
 	t.Run("ConnectionError", func(t *testing.T) {
-		_, err := client.DeleteObjects(ctx, "", "C1", "S1", "", uuids, false, 123)
+		_, err := client.DeleteObjects(ctx, "", "C1", "S1", "", uuids, deletionTime, false, 123)
 		assert.NotNil(t, err)
 		assert.Contains(t, err.Error(), "connect")
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		resp, err := client.DeleteObjects(ctx, fs.host, "C1", "S1", RequestError, uuids, false, 123)
+		resp, err := client.DeleteObjects(ctx, fs.host, "C1", "S1", RequestError, uuids, deletionTime, false, 123)
 		assert.Nil(t, err)
 		assert.Equal(t, replica.SimpleResponse{Errors: fs.RequestError.Errors}, resp)
 	})
 
 	t.Run("DecodeResponse", func(t *testing.T) {
-		_, err := client.DeleteObjects(ctx, fs.host, "C1", "S1", RequestMalFormedResponse, uuids, false, 123)
+		_, err := client.DeleteObjects(ctx, fs.host, "C1", "S1", RequestMalFormedResponse, uuids, deletionTime, false, 123)
 		assert.NotNil(t, err)
 		assert.Contains(t, err.Error(), "decode response")
 	})
 
 	t.Run("ServerInternalError", func(t *testing.T) {
-		_, err := client.DeleteObjects(ctx, fs.host, "C1", "S1", RequestInternalError, uuids, false, 123)
+		_, err := client.DeleteObjects(ctx, fs.host, "C1", "S1", RequestInternalError, uuids, deletionTime, false, 123)
 		assert.NotNil(t, err)
 		assert.Contains(t, err.Error(), "status code")
 	})
@@ -503,7 +507,7 @@ func TestReplicationDigestObjects(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now()
-	expected := []replica.RepairResponse{
+	expected := []types.RepairResponse{
 		{
 			ID:         UUID1.String(),
 			UpdateTime: now.UnixMilli(),
@@ -511,6 +515,7 @@ func TestReplicationDigestObjects(t *testing.T) {
 		},
 		{
 			ID:         UUID2.String(),
+			Deleted:    true,
 			UpdateTime: now.UnixMilli(),
 			Version:    1,
 		},
@@ -558,7 +563,7 @@ func TestReplicationOverwriteObjects(t *testing.T) {
 			Version:         0,
 		},
 	}
-	expected := []replica.RepairResponse{
+	expected := []types.RepairResponse{
 		{
 			ID:         UUID1.String(),
 			Version:    1,

@@ -46,7 +46,7 @@ func New(cfg config.Config) (*Client, error) {
 	}
 
 	if err := client.init(); err != nil {
-		return nil, fmt.Errorf("oidc init: %v", err)
+		return nil, fmt.Errorf("oidc init: %w", err)
 	}
 
 	return client, nil
@@ -54,12 +54,12 @@ func New(cfg config.Config) (*Client, error) {
 
 func (c *Client) init() error {
 	if err := c.validateConfig(); err != nil {
-		return fmt.Errorf("invalid config: %v", err)
+		return fmt.Errorf("invalid config: %w", err)
 	}
 
 	provider, err := oidc.NewProvider(context.Background(), c.config.Issuer)
 	if err != nil {
-		return fmt.Errorf("could not setup provider: %v", err)
+		return fmt.Errorf("could not setup provider: %w", err)
 	}
 	c.provider = provider
 
@@ -94,7 +94,7 @@ func (c *Client) validateConfig() error {
 		return nil
 	}
 
-	return fmt.Errorf(strings.Join(msgs, ", "))
+	return fmt.Errorf("%v", strings.Join(msgs, ", "))
 }
 
 // ValidateAndExtract can be used as a middleware for go-swagger
@@ -105,17 +105,17 @@ func (c *Client) ValidateAndExtract(token string, scopes []string) (*models.Prin
 
 	parsed, err := c.verifier.Verify(context.Background(), token)
 	if err != nil {
-		return nil, errors.New(401, err.Error())
+		return nil, errors.New(401, "unauthorized: %v", err)
 	}
 
 	claims, err := c.extractClaims(parsed)
 	if err != nil {
-		return nil, errors.New(500, fmt.Sprintf("oidc: %v", err))
+		return nil, errors.New(500, "oidc: %v", err)
 	}
 
 	username, err := c.extractUsername(claims)
 	if err != nil {
-		return nil, errors.New(500, fmt.Sprintf("oidc: %v", err))
+		return nil, errors.New(500, "oidc: %v", err)
 	}
 
 	groups := c.extractGroups(claims)
@@ -123,13 +123,14 @@ func (c *Client) ValidateAndExtract(token string, scopes []string) (*models.Prin
 	return &models.Principal{
 		Username: username,
 		Groups:   groups,
+		UserType: models.UserTypeInputOidc,
 	}, nil
 }
 
 func (c *Client) extractClaims(token *oidc.IDToken) (map[string]interface{}, error) {
 	var claims map[string]interface{}
 	if err := token.Claims(&claims); err != nil {
-		return nil, fmt.Errorf("could not extract claims from token: %v", err)
+		return nil, fmt.Errorf("could not extract claims from token: %w", err)
 	}
 
 	return claims, nil
