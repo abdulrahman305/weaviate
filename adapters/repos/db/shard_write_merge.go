@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -26,7 +26,7 @@ import (
 var errObjectNotFound = errors.New("object not found")
 
 func (s *Shard) MergeObject(ctx context.Context, merge objects.MergeDocument) error {
-	s.activityTracker.Add(1)
+	s.activityTrackerWrite.Add(1)
 	if err := s.isReadOnly(); err != nil {
 		return err
 	}
@@ -111,10 +111,6 @@ func (s *Shard) merge(ctx context.Context, idBytes []byte, doc objects.MergeDocu
 		return errors.Wrap(err, "flush all buffered WALs")
 	}
 
-	if err := s.mayUpsertObjectHashTree(obj, idBytes, status); err != nil {
-		return errors.Wrap(err, "object merge in hashtree")
-	}
-
 	return nil
 }
 
@@ -166,6 +162,10 @@ func (s *Shard) mergeObjectInStorage(merge objects.MergeDocument,
 
 		if err := s.upsertObjectDataLSM(bucket, idBytes, objBytes, status.docID); err != nil {
 			return errors.Wrap(err, "upsert object data")
+		}
+
+		if err := s.mayUpsertObjectHashTree(obj, idBytes, status); err != nil {
+			return errors.Wrap(err, "object merge in hashtree")
 		}
 
 		return nil

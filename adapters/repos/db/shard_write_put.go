@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -31,7 +31,7 @@ import (
 )
 
 func (s *Shard) PutObject(ctx context.Context, object *storobj.Object) error {
-	s.activityTracker.Add(1)
+	s.activityTrackerWrite.Add(1)
 	if err := s.isReadOnly(); err != nil {
 		return err
 	}
@@ -46,6 +46,10 @@ func (s *Shard) putOne(ctx context.Context, uuid []byte, object *storobj.Object)
 	status, err := s.putObjectLSM(object, uuid)
 	if err != nil {
 		return errors.Wrap(err, "store object in LSM store")
+	}
+
+	if err := s.mayUpsertObjectHashTree(object, uuid, status); err != nil {
+		return errors.Wrap(err, "object creation in hashtree")
 	}
 
 	// object was not changed, no further updates are required
@@ -81,10 +85,6 @@ func (s *Shard) putOne(ctx context.Context, uuid []byte, object *storobj.Object)
 
 	if err := s.GetPropertyLengthTracker().Flush(); err != nil {
 		return errors.Wrap(err, "flush prop length tracker to disk")
-	}
-
-	if err := s.mayUpsertObjectHashTree(object, uuid, status); err != nil {
-		return errors.Wrap(err, "object creation in hashtree")
 	}
 
 	return nil

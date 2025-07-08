@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -142,7 +142,7 @@ func slice(from, to uint64) []uint64 {
 func TestBitmapFactory(t *testing.T) {
 	maxId := uint64(10)
 	maxIdGetter := func() uint64 { return maxId }
-	bmf := NewBitmapFactory(maxIdGetter)
+	bmf := NewBitmapFactory(NewBitmapBufPoolNoop(), maxIdGetter)
 
 	t.Run("prefilled bitmap includes increment", func(t *testing.T) {
 		expPrefilledMaxId := maxId + defaultIdIncrement

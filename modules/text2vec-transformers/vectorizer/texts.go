@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -16,7 +16,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/weaviate/weaviate/entities/moduletools"
-	"github.com/weaviate/weaviate/modules/text2vec-transformers/ent"
+	"github.com/weaviate/weaviate/usecases/modulecomponents/clients/transformers"
 	libvectorizer "github.com/weaviate/weaviate/usecases/vectorizer"
 )
 
@@ -35,9 +35,9 @@ func (v *Vectorizer) Texts(ctx context.Context, inputs []string,
 	return libvectorizer.CombineVectors(vectors), nil
 }
 
-func (v *Vectorizer) getVectorizationConfig(cfg moduletools.ClassConfig) ent.VectorizationConfig {
+func (v *Vectorizer) getVectorizationConfig(cfg moduletools.ClassConfig) transformers.VectorizationConfig {
 	settings := NewClassSettings(cfg)
-	return ent.VectorizationConfig{
+	return transformers.VectorizationConfig{
 		PoolingStrategy:     settings.PoolingStrategy(),
 		InferenceURL:        settings.InferenceURL(),
 		PassageInferenceURL: settings.PassageInferenceURL(),

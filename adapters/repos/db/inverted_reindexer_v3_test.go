@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -184,6 +184,7 @@ func (t *dummyShardReindexTaskV3) OnAfterLsmInit(ctx context.Context, shard *Sha
 	return nil
 }
 
-func (t *dummyShardReindexTaskV3) OnAfterLsmInitAsync(ctx context.Context, shard ShardLike) (rerunAt time.Time, err error) {
-	return time.Time{}, nil
+func (t *dummyShardReindexTaskV3) OnAfterLsmInitAsync(ctx context.Context, shard ShardLike,
+) (rerunAt time.Time, reloadShard bool, err error) {
+	return time.Time{}, false, nil
 }

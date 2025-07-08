@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -493,11 +493,12 @@ func compactionSetStrategy_FrequentPutDeleteOperations(ctx context.Context, t *t
 			t.Run("verify that objects exist before compaction", func(t *testing.T) {
 				res, err := bucket.SetList(key)
 				assert.Nil(t, err)
-				if size == 5 {
+				switch size {
+				case 5:
 					assert.Len(t, res, 0)
-				} else if size == 6 {
+				case 6:
 					assert.Len(t, res, 1)
-				} else {
+				default:
 					assert.Len(t, res, 2)
 				}
 			})
@@ -513,11 +514,12 @@ func compactionSetStrategy_FrequentPutDeleteOperations(ctx context.Context, t *t
 			t.Run("verify that objects exist after compaction", func(t *testing.T) {
 				res, err := bucket.SetList(key)
 				assert.Nil(t, err)
-				if size == 5 {
+				switch size {
+				case 5:
 					assert.Len(t, res, 0)
-				} else if size == 6 {
+				case 6:
 					assert.Len(t, res, 1)
-				} else {
+				default:
 					assert.Len(t, res, 2)
 				}
 			})

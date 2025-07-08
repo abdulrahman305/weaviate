@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -21,24 +21,23 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+
 	"github.com/weaviate/weaviate/adapters/repos/db/helpers"
 	"github.com/weaviate/weaviate/adapters/repos/db/indexcheckpoint"
 	"github.com/weaviate/weaviate/adapters/repos/db/queue"
 	enterrors "github.com/weaviate/weaviate/entities/errors"
 	"github.com/weaviate/weaviate/entities/models"
 	entsentry "github.com/weaviate/weaviate/entities/sentry"
+	"github.com/weaviate/weaviate/entities/storagestate"
 	"github.com/weaviate/weaviate/usecases/monitoring"
 )
 
 func NewShard(ctx context.Context, promMetrics *monitoring.PrometheusMetrics,
 	shardName string, index *Index, class *models.Class, jobQueueCh chan job,
 	scheduler *queue.Scheduler, indexCheckpoints *indexcheckpoint.Checkpoints,
-	reindexer ShardReindexerV3,
+	reindexer ShardReindexerV3, lazyLoadSegments bool,
 ) (_ *Shard, err error) {
-	promMetrics.StartLoadingShard()
-	defer promMetrics.FinishLoadingShard()
-
-	before := time.Now()
+	start := time.Now()
 
 	index.logger.WithFields(logrus.Fields{
 		"action": "init_shard",
@@ -53,21 +52,23 @@ func NewShard(ctx context.Context, promMetrics *monitoring.PrometheusMetrics,
 		promMetrics: promMetrics,
 		metrics: NewMetrics(index.logger, promMetrics,
 			string(index.Config.ClassName), shardName),
-		slowQueryReporter:     helpers.NewSlowQueryReporterFromEnv(index.logger),
+		slowQueryReporter: helpers.NewSlowQueryReporter(index.Config.QuerySlowLogEnabled,
+			index.Config.QuerySlowLogThreshold, index.logger),
 		stopDimensionTracking: make(chan struct{}),
 		replicationMap:        pendingReplicaTasks{Tasks: make(map[string]replicaTask, 32)},
 		centralJobQueue:       jobQueueCh,
 		scheduler:             scheduler,
 		indexCheckpoints:      indexCheckpoints,
 
-		shut:         false,
 		shutdownLock: new(sync.RWMutex),
 
-		status:                          NewShardStatus(),
+		status:                          ShardStatus{Status: storagestate.StatusLoading},
 		searchableBlockmaxPropNamesLock: new(sync.Mutex),
 		reindexer:                       reindexer,
 		usingBlockMaxWAND:               index.invertedIndexConfig.UsingBlockMaxWAND,
 	}
+
+	index.metrics.UpdateShardStatus("", storagestate.StatusLoading.String())
 
 	defer func() {
 		p := recover()
@@ -99,18 +100,20 @@ func NewShard(ctx context.Context, promMetrics *monitoring.PrometheusMetrics,
 		}
 	}()
 
-	s.activityTracker.Store(1) // initial state
+	defer func() {
+		index.metrics.ObserveUpdateShardStatus(s.status.Status.String(), time.Since(start))
+	}()
+
+	s.activityTrackerRead.Store(1)  // initial state
+	s.activityTrackerWrite.Store(1) // initial state
 	s.initCycleCallbacks()
 
 	s.docIdLock = make([]sync.Mutex, IdLockPoolSize)
 
-	defer s.metrics.ShardStartup(before)
+	defer index.metrics.ShardStartup(start)
 
 	_, err = os.Stat(s.path())
-	exists := false
-	if err == nil {
-		exists = true
-	}
+	exists := err == nil
 
 	if err := os.MkdirAll(s.path(), os.ModePerm); err != nil {
 		return nil, err
@@ -123,11 +126,14 @@ func NewShard(ctx context.Context, promMetrics *monitoring.PrometheusMetrics,
 
 	_ = s.reindexer.RunBeforeLsmInit(ctx, s)
 
-	if err := s.initNonVector(ctx, class); err != nil {
+	if s.index.Config.LazySegmentsDisabled {
+		lazyLoadSegments = false // disable globally
+	}
+	if err := s.initNonVector(ctx, class, lazyLoadSegments); err != nil {
 		return nil, errors.Wrapf(err, "init shard %q", s.ID())
 	}
 
-	if err = s.initShardVectors(ctx); err != nil {
+	if err = s.initShardVectors(ctx, lazyLoadSegments); err != nil {
 		return nil, fmt.Errorf("init shard vectors: %w", err)
 	}
 
@@ -147,9 +153,9 @@ func NewShard(ctx context.Context, promMetrics *monitoring.PrometheusMetrics,
 	s.NotifyReady()
 
 	if exists {
-		s.index.logger.Printf("Completed loading shard %s in %s", s.ID(), time.Since(before))
+		s.index.logger.Printf("Completed loading shard %s in %s", s.ID(), time.Since(start))
 	} else {
-		s.index.logger.Printf("Created shard %s in %s", s.ID(), time.Since(before))
+		s.index.logger.Printf("Created shard %s in %s", s.ID(), time.Since(start))
 	}
 
 	_ = s.reindexer.RunAfterLsmInit(ctx, s)
@@ -169,7 +175,7 @@ func (s *Shard) cleanupPartialInit(ctx context.Context) {
 }
 
 func (s *Shard) NotifyReady() {
-	s.initStatus()
+	s.UpdateStatus(storagestate.StatusReady.String())
 	s.index.logger.
 		WithField("action", "startup").
 		Debugf("shard=%s is ready", s.name)

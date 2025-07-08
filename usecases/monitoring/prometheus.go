@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -52,6 +52,7 @@ type PrometheusMetrics struct {
 	LSMObjectsBucketSegmentCount        *prometheus.GaugeVec
 	LSMCompressedVecsBucketSegmentCount *prometheus.GaugeVec
 	LSMSegmentCountByLevel              *prometheus.GaugeVec
+	LSMSegmentUnloaded                  *prometheus.GaugeVec
 	LSMSegmentObjects                   *prometheus.GaugeVec
 	LSMSegmentSize                      *prometheus.GaugeVec
 	LSMMemtableSize                     *prometheus.GaugeVec
@@ -72,6 +73,10 @@ type PrometheusMetrics struct {
 	BackupRestoreFromStorageDurations   *prometheus.SummaryVec
 	BackupRestoreDataTransferred        *prometheus.CounterVec
 	BackupStoreDataTransferred          *prometheus.CounterVec
+	FileIOWrites                        *prometheus.SummaryVec
+	FileIOReads                         *prometheus.SummaryVec
+	MmapOperations                      *prometheus.CounterVec
+	MmapProcMaps                        prometheus.Gauge
 
 	// offload metric
 	QueueSize                        *prometheus.GaugeVec
@@ -144,6 +149,20 @@ type PrometheusMetrics struct {
 	TokenizerInitializeDuration *prometheus.HistogramVec
 	TokenCount                  *prometheus.CounterVec
 	TokenCountPerRequest        *prometheus.HistogramVec
+
+	// Currently targeted at OpenAI, the metrics will have to be added to every vectorizer for complete coverage
+	ModuleExternalRequests           *prometheus.CounterVec
+	ModuleExternalRequestDuration    *prometheus.HistogramVec
+	ModuleExternalBatchLength        *prometheus.HistogramVec
+	ModuleExternalRequestSingleCount *prometheus.CounterVec
+	ModuleExternalRequestBatchCount  *prometheus.CounterVec
+	ModuleExternalRequestSize        *prometheus.HistogramVec
+	ModuleExternalResponseSize       *prometheus.HistogramVec
+	ModuleExternalResponseStatus     *prometheus.CounterVec
+	VectorizerRequestTokens          *prometheus.HistogramVec
+	ModuleExternalError              *prometheus.CounterVec
+	ModuleCallError                  *prometheus.CounterVec
+	ModuleBatchError                 *prometheus.CounterVec
 }
 
 func NewTenantOffloadMetrics(cfg Config, reg prometheus.Registerer) *TenantOffloadMetrics {
@@ -363,6 +382,7 @@ func GetMetrics() *PrometheusMetrics {
 
 func newPrometheusMetrics() *PrometheusMetrics {
 	return &PrometheusMetrics{
+		Registerer: prometheus.DefaultRegisterer,
 		BatchTime: promauto.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "batch_durations_ms",
 			Help:    "Duration in ms of a single batch",
@@ -465,6 +485,10 @@ func newPrometheusMetrics() *PrometheusMetrics {
 			Name: "lsm_segment_count",
 			Help: "Number of segments by level",
 		}, []string{"strategy", "class_name", "shard_name", "path", "level"}),
+		LSMSegmentUnloaded: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "lsm_segment_unloaded",
+			Help: "Number of unloaded segments",
+		}, []string{"strategy", "class_name", "shard_name", "path"}),
 		LSMMemtableSize: promauto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "lsm_memtable_size",
 			Help: "Size of memtable by path",
@@ -473,6 +497,22 @@ func newPrometheusMetrics() *PrometheusMetrics {
 			Name: "lsm_memtable_durations_ms",
 			Help: "Time in ms for a bucket operation to complete",
 		}, []string{"strategy", "class_name", "shard_name", "path", "operation"}),
+		FileIOWrites: promauto.NewSummaryVec(prometheus.SummaryOpts{
+			Name: "file_io_writes_total_bytes",
+			Help: "Total number of bytes written to disk",
+		}, []string{"operation", "strategy"}),
+		FileIOReads: promauto.NewSummaryVec(prometheus.SummaryOpts{
+			Name: "file_io_reads_total_bytes",
+			Help: "Total number of bytes read from disk",
+		}, []string{"operation"}),
+		MmapOperations: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "mmap_operations_total",
+			Help: "Total number of mmap operations",
+		}, []string{"operation", "strategy"}),
+		MmapProcMaps: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "mmap_proc_maps",
+			Help: "Number of entries in /proc/self/maps",
+		}),
 
 		// Queue metrics
 		QueueSize: promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -743,6 +783,59 @@ func newPrometheusMetrics() *PrometheusMetrics {
 			Help:    "Number of tokens processed per request",
 			Buckets: []float64{1, 10, 50, 100, 500, 1000, 10000, 100000, 1000000},
 		}, []string{"tokenizer"}),
+		ModuleExternalRequests: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "weaviate_module_requests_total",
+			Help: "Number of module requests to external APIs",
+		}, []string{"op", "api"}),
+		ModuleExternalRequestDuration: promauto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "weaviate_module_request_duration_seconds",
+			Help:    "Duration of an individual request to a module external API",
+			Buckets: LatencyBuckets,
+		}, []string{"op", "api"}),
+		ModuleExternalBatchLength: promauto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "weaviate_module_requests_per_batch",
+			Help:    "Number of items in a batch",
+			Buckets: []float64{1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608},
+		}, []string{"op", "api"}),
+		ModuleExternalRequestSize: promauto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "weaviate_module_request_size_bytes",
+			Help:    "Size (in bytes) of the request sent to an external API",
+			Buckets: []float64{256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608},
+		}, []string{"op", "api"}),
+		ModuleExternalResponseSize: promauto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "weaviate_module_response_size_bytes",
+			Help:    "Size (in bytes) of the response received from an external API",
+			Buckets: []float64{256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608},
+		}, []string{"op", "api"}),
+		VectorizerRequestTokens: promauto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "weaviate_vectorizer_request_tokens",
+			Help:    "Number of tokens in the request sent to an external vectorizer",
+			Buckets: []float64{0, 1, 10, 50, 100, 500, 1000, 5000, 10000, 100000, 1000000},
+		}, []string{"inout", "api"}),
+		ModuleExternalRequestSingleCount: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "weaviate_module_request_single_count",
+			Help: "Number of single-item external API requests",
+		}, []string{"op", "api"}),
+		ModuleExternalRequestBatchCount: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "weaviate_module_request_batch_count",
+			Help: "Number of batched module requests",
+		}, []string{"op", "api"}),
+		ModuleExternalError: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "weaviate_module_error_total",
+			Help: "Number of OpenAI errors",
+		}, []string{"op", "module", "endpoint", "status_code"}),
+		ModuleCallError: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "weaviate_module_call_error_total",
+			Help: "Number of module errors (related to external calls)",
+		}, []string{"module", "endpoint", "status_code"}),
+		ModuleExternalResponseStatus: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "weaviate_module_response_status_total",
+			Help: "Number of API response statuses",
+		}, []string{"op", "endpoint", "status"}),
+		ModuleBatchError: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "weaviate_module_batch_error_total",
+			Help: "Number of batch errors",
+		}, []string{"operation", "class_name"}),
 	}
 }
 

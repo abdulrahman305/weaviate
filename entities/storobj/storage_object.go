@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -585,6 +585,10 @@ func (ko *Object) asVectors(vectors map[string][]float32, multiVectors map[strin
 	return nil
 }
 
+func (ko *Object) GetVectors() models.Vectors {
+	return ko.asVectors(ko.Vectors, ko.MultiVectors)
+}
+
 func (ko *Object) SearchResultWithDist(addl additional.Properties, dist float32) search.Result {
 	res := ko.SearchResult(addl, "")
 	res.Dist = dist
@@ -991,7 +995,7 @@ func UnmarshalPropertiesFromObject(data []byte, resultProperties map[string]inte
 	clear(resultProperties)
 
 	startPos := uint64(1 + 8 + 1 + 16 + 8 + 8) // elements at the start
-	rw := byteops.NewReadWriter(data, byteops.WithPosition(startPos))
+	rw := byteops.NewReadWriterWithOps(data, byteops.WithPosition(startPos))
 	// get the length of the vector, each element is a float32 (4 bytes)
 	vectorLength := uint64(rw.ReadUint16())
 	rw.MoveBufferPositionForward(vectorLength * 4)
@@ -1116,7 +1120,7 @@ func (ko *Object) UnmarshalBinary(data []byte) error {
 	}
 	ko.MarshallerVersion = version
 
-	rw := byteops.NewReadWriter(data, byteops.WithPosition(1))
+	rw := byteops.NewReadWriterWithOps(data, byteops.WithPosition(1))
 	ko.DocID = rw.ReadUint64()
 	rw.MoveBufferPositionForward(1) // kind-byte
 
@@ -1195,7 +1199,7 @@ func unmarshalTargetVectors(rw *byteops.ReadWriter) (map[string][]float32, error
 		if len(targetVectorsOffsets) > 0 {
 			var tvOffsets map[string]uint32
 			if err := msgpack.Unmarshal(targetVectorsOffsets, &tvOffsets); err != nil {
-				return nil, fmt.Errorf("Could not unmarshal target vectors offset: %w", err)
+				return nil, fmt.Errorf("could not unmarshal target vectors offset: %w", err)
 			}
 
 			targetVectors := map[string][]float32{}
@@ -1280,7 +1284,7 @@ func VectorFromBinary(in []byte, buffer []float32, targetVector string) ([]float
 
 	if targetVector != "" {
 		startPos := uint64(1 + 8 + 1 + 16 + 8 + 8) // elements at the start
-		rw := byteops.NewReadWriter(in, byteops.WithPosition(startPos))
+		rw := byteops.NewReadWriterWithOps(in, byteops.WithPosition(startPos))
 
 		vectorLength := uint64(rw.ReadUint16())
 		rw.MoveBufferPositionForward(vectorLength * 4)
@@ -1394,7 +1398,7 @@ func MultiVectorFromBinary(in []byte, buffer []float32, targetVector string) ([]
 	var multiVectors map[string][][]float32
 
 	if len(in) > pos {
-		rw := byteops.NewReadWriter(in, byteops.WithPosition(uint64(pos)))
+		rw := byteops.NewReadWriterWithOps(in, byteops.WithPosition(uint64(pos)))
 		mv, err := unmarshalMultiVectors(&rw, map[string]interface{}{targetVector: nil})
 		if err != nil {
 			return nil, errors.Errorf("unable to unmarshal multivector for target vector: %s", targetVector)

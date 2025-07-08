@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -29,33 +29,34 @@ func NewMemtableReader(memtable *Memtable) *MemtableReader {
 }
 
 func (r *MemtableReader) Read(ctx context.Context, value uint64, operator filters.Operator,
-) (roaringset.BitmapLayer, error) {
+) (roaringset.BitmapLayer, func(), error) {
 	if err := ctx.Err(); err != nil {
-		return roaringset.BitmapLayer{}, err
+		return roaringset.BitmapLayer{}, noopRelease, err
 	}
 
 	switch operator {
 	case filters.OperatorEqual:
-		return r.read(func(k uint64) bool { return k == value }), nil
+		return r.read(func(k uint64) bool { return k == value }), noopRelease, nil
 
 	case filters.OperatorNotEqual:
-		return r.read(func(k uint64) bool { return k != value }), nil
+		return r.read(func(k uint64) bool { return k != value }), noopRelease, nil
 
 	case filters.OperatorLessThan:
-		return r.read(func(k uint64) bool { return k < value }), nil
+		return r.read(func(k uint64) bool { return k < value }), noopRelease, nil
 
 	case filters.OperatorLessThanEqual:
-		return r.read(func(k uint64) bool { return k <= value }), nil
+		return r.read(func(k uint64) bool { return k <= value }), noopRelease, nil
 
 	case filters.OperatorGreaterThan:
-		return r.read(func(k uint64) bool { return k > value }), nil
+		return r.read(func(k uint64) bool { return k > value }), noopRelease, nil
 
 	case filters.OperatorGreaterThanEqual:
-		return r.read(func(k uint64) bool { return k >= value }), nil
+		return r.read(func(k uint64) bool { return k >= value }), noopRelease, nil
 
 	default:
-		return roaringset.BitmapLayer{}, fmt.Errorf("operator %v not supported for segments of strategy %q",
-			operator.Name(), "roaringsetrange") // TODO move strategies to separate package?
+		// TODO move strategies to separate package?
+		return roaringset.BitmapLayer{}, noopRelease,
+			fmt.Errorf("operator %v not supported for segments of strategy %q", operator.Name(), "roaringsetrange")
 	}
 }
 

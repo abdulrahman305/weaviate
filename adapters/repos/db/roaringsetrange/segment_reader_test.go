@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -154,8 +154,9 @@ func TestSegmentReader(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run("read", func(t *testing.T) {
-			bm, err := reader.Read(context.Background(), tc.value, tc.operator)
+			bm, release, err := reader.Read(context.Background(), tc.value, tc.operator)
 			assert.NoError(t, err)
+			defer release()
 			assert.ElementsMatch(t, bm.Additions.ToArray(), tc.expectedAdd)
 			assert.ElementsMatch(t, bm.Deletions.ToArray(), tc.expectedDel)
 		})

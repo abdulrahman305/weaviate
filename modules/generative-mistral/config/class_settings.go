@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -68,12 +68,12 @@ func (ic *classSettings) getStringProperty(name, defaultValue string) *string {
 }
 
 func (ic *classSettings) getIntProperty(name string, defaultValue *int) *int {
-	var wrongVal int = -1
+	wrongVal := -1
 	return ic.propertyValuesHelper.GetPropertyAsIntWithNotExists(ic.cfg, name, &wrongVal, defaultValue)
 }
 
 func (ic *classSettings) getFloat64Property(name string, defaultValue *float64) *float64 {
-	var wrongVal float64 = -1
+	wrongVal := float64(-1)
 	return ic.propertyValuesHelper.GetPropertyAsFloat64WithNotExists(ic.cfg, name, &wrongVal, defaultValue)
 }
 

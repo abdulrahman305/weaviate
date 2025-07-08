@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -18,11 +18,14 @@ import (
 	"runtime/debug"
 	"slices"
 	"sort"
+	"strconv"
 
 	"github.com/pkg/errors"
+	"github.com/weaviate/weaviate/adapters/handlers/graphql/local/common_filters"
 	"github.com/weaviate/weaviate/adapters/repos/db/helpers"
 	"github.com/weaviate/weaviate/adapters/repos/db/inverted/terms"
 	"github.com/weaviate/weaviate/adapters/repos/db/lsmkv"
+	"github.com/weaviate/weaviate/adapters/repos/db/priorityqueue"
 	"github.com/weaviate/weaviate/entities/additional"
 	entcfg "github.com/weaviate/weaviate/entities/config"
 	enterrors "github.com/weaviate/weaviate/entities/errors"
@@ -34,9 +37,9 @@ import (
 
 // var metrics = lsmkv.BlockMetrics{}
 
-func (b *BM25Searcher) createBlockTerm(N float64, filterDocIds helpers.AllowList, query []string, propName string, propertyBoost float32, duplicateTextBoosts []int, averagePropLength float64, config schema.BM25Config, ctx context.Context) ([][]*lsmkv.SegmentBlockMax, map[string]uint64, func(), error) {
+func (b *BM25Searcher) createBlockTerm(N float64, filterDocIds helpers.AllowList, query []string, propName string, propertyBoost float32, duplicateTextBoosts []int, config schema.BM25Config, ctx context.Context) ([][]*lsmkv.SegmentBlockMax, map[string]uint64, func(), error) {
 	bucket := b.store.Bucket(helpers.BucketSearchableFromPropNameLSM(propName))
-	return bucket.CreateDiskTerm(N, filterDocIds, query, propName, propertyBoost, duplicateTextBoosts, averagePropLength, config, ctx)
+	return bucket.CreateDiskTerm(N, filterDocIds, query, propName, propertyBoost, duplicateTextBoosts, config, ctx)
 }
 
 func (b *BM25Searcher) wandBlock(
@@ -51,6 +54,12 @@ func (b *BM25Searcher) wandBlock(
 		}
 	}()
 
+	// if the filter is empty, we can skip the search
+	// as no documents will match it
+	if filterDocIds != nil && filterDocIds.IsEmpty() {
+		return []*storobj.Object{}, []float32{}, nil
+	}
+
 	allBucketsAreInverted, N, propNamesByTokenization, queryTermsByTokenization, duplicateBoostsByTokenization, propertyBoosts, averagePropLength, err := b.generateQueryTermsAndStats(class, params)
 	if err != nil {
 		return nil, nil, err
@@ -63,6 +72,7 @@ func (b *BM25Searcher) wandBlock(
 
 	allResults := make([][][]*lsmkv.SegmentBlockMax, 0, len(params.Properties))
 	termCounts := make([][]string, 0, len(params.Properties))
+	minimumOrTokensMatchByProperty := make([]int, 0, len(params.Properties))
 
 	// These locks are the segmentCompactions locks for the searched properties
 	// The old search process locked the compactions and read the full postings list into memory.
@@ -89,7 +99,7 @@ func (b *BM25Searcher) wandBlock(
 			globalIdfCounts := make(map[string]uint64, len(queryTerms))
 			nonZeroTerms := make(map[string]uint64, len(queryTerms))
 			for _, propName := range propNames {
-				results, idfCounts, release, err := b.createBlockTerm(N, filterDocIds, queryTerms, propName, propertyBoosts[propName], duplicateBoosts, averagePropLength, b.config, ctx)
+				results, idfCounts, release, err := b.createBlockTerm(N, filterDocIds, queryTerms, propName, propertyBoosts[propName], duplicateBoosts, b.config, ctx)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -100,6 +110,13 @@ func (b *BM25Searcher) wandBlock(
 
 				allResults = append(allResults, results)
 				termCounts = append(termCounts, queryTerms)
+
+				minimumOrTokensMatch := params.MinimumOrTokensMatch
+				if params.SearchOperator == common_filters.SearchOperatorAnd {
+					minimumOrTokensMatch = len(queryTerms)
+				}
+
+				minimumOrTokensMatchByProperty = append(minimumOrTokensMatchByProperty, minimumOrTokensMatch)
 				for _, term := range queryTerms {
 					globalIdfCounts[term] += idfCounts[term]
 					if idfCounts[term] > 0 {
@@ -149,10 +166,22 @@ func (b *BM25Searcher) wandBlock(
 		}
 		internalLimit = limit
 
-	} else if len(allResults) > 1 { // we only need to increase the limit if there are multiple properties
+	} else if len(allResults) > 1 {
+		// we only need to increase the limit if there are multiple properties
 		// TODO: the limit is increased by 10 to make sure candidates that are on the edge of the limit are not missed for multi-property search
 		// the proper fix is to either make sure that the limit is always high enough, or force a rerank of the top results from all properties
-		internalLimit = limit + 10
+		defaultLimit := int(math.Max(float64(limit)*1.1, float64(limit+10)))
+		// allow overriding the defaultLimit with an env var
+		internalLimitString := os.Getenv("BLOCKMAX_WAND_PER_SEGMENT_LIMIT")
+		if internalLimitString != "" {
+			// if the env var is set, use it as the limit
+			internalLimit, _ = strconv.Atoi(internalLimitString)
+		}
+
+		if internalLimit < defaultLimit {
+			// if the limit is smaller than the defaultLimit, use the defaultLimit
+			internalLimit = defaultLimit
+		}
 	}
 
 	eg := enterrors.NewErrorGroupWrapper(b.logger)
@@ -175,8 +204,19 @@ func (b *BM25Searcher) wandBlock(
 			if len(allResults[i][j]) == 0 {
 				continue
 			}
+
+			// return early if there aren't enough terms to match
+			if len(allResults[i][j]) < minimumOrTokensMatchByProperty[i] {
+				continue
+			}
+
 			eg.Go(func() (err error) {
-				topKHeap := lsmkv.DoBlockMaxWand(internalLimit, allResults[i][j], averagePropLength, params.AdditionalExplanations, len(termCounts[i]))
+				var topKHeap *priorityqueue.Queue[[]*terms.DocPointerWithScore]
+				if params.SearchOperator == common_filters.SearchOperatorAnd {
+					topKHeap = lsmkv.DoBlockMaxAnd(internalLimit, allResults[i][j], averagePropLength, params.AdditionalExplanations, len(termCounts[i]), minimumOrTokensMatchByProperty[i])
+				} else {
+					topKHeap = lsmkv.DoBlockMaxWand(internalLimit, allResults[i][j], averagePropLength, params.AdditionalExplanations, len(termCounts[i]), minimumOrTokensMatchByProperty[i])
+				}
 				ids, scores, explanations, err := b.getTopKIds(topKHeap)
 				if err != nil {
 					return err

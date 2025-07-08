@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -168,7 +168,7 @@ func getShard(src, shardName string) (sd backup.ShardDescriptor, err error) {
 		if !fi.Mode().IsRegular() || !strings.Contains(fPath, shardName) {
 			return nil
 		}
-		relPath := strings.TrimPrefix(strings.Replace(fPath, src, "", -1), string(filepath.Separator))
+		relPath := strings.TrimPrefix(strings.ReplaceAll(fPath, src, ""), string(filepath.Separator))
 		name := fi.Name()
 
 		if strings.Contains(name, "indexcount") {

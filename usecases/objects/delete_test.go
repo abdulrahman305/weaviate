@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/go-openapi/strfmt"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -77,6 +78,7 @@ func newDeleteDependency() (*Manager, *fakeVectorRepo) {
 		mocks.NewMockAuthorizer(),
 		vectorRepo,
 		getFakeModulesProvider(),
-		new(fakeMetrics), nil)
+		new(fakeMetrics), nil,
+		NewAutoSchemaManager(new(fakeSchemaManager), vectorRepo, new(config.WeaviateConfig), mocks.NewMockAuthorizer(), logger, prometheus.NewPedanticRegistry()))
 	return manager, vectorRepo
 }

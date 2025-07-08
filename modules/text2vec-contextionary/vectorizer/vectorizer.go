@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -104,7 +104,7 @@ func (v *Vectorizer) object(ctx context.Context, object *models.Object, override
 	if err != nil {
 		switch {
 		case errors.As(err, &ErrNoUsableWords{}):
-			return nil, nil, fmt.Errorf("The object is invalid, as weaviate could not extract "+
+			return nil, nil, fmt.Errorf("the object is invalid, as weaviate could not extract "+
 				"any contextionary-valid words from it. This is the case when you have "+
 				"set the options 'vectorizeClassName: false' and 'vectorizePropertyName: false' in this class' schema definition "+
 				"and not a single property's value "+

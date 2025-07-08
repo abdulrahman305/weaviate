@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -280,7 +280,7 @@ func TestRBTrees_Random(t *testing.T) {
 	for i := 0; i < amount; i++ {
 		key := make([]byte, keySize)
 		rand.Read(key)
-		uniqueKeys[fmt.Sprint(key)] = member
+		uniqueKeys[string(key)] = member
 		if mustRandIntn(5) == 1 { // add 20% of all entries as tombstone
 			tree.setTombstone(key, nil, nil)
 		} else {
@@ -292,7 +292,7 @@ func TestRBTrees_Random(t *testing.T) {
 	treeFlattened := tree.flattenInOrder()
 	require.Equal(t, len(uniqueKeys), len(treeFlattened))
 	for _, entry := range treeFlattened {
-		_, ok := uniqueKeys[fmt.Sprint(entry.key)]
+		_, ok := uniqueKeys[string(entry.key)]
 		require.True(t, ok)
 	}
 	validateRBTree(t, tree.root)
@@ -306,7 +306,7 @@ func TestRBTreesMap_Random(t *testing.T) {
 	for i := 0; i < amount; i++ {
 		key := make([]byte, keySize)
 		rand.Read(key)
-		uniqueKeys[fmt.Sprint(key)] = member
+		uniqueKeys[string(key)] = member
 		tree.insert(key, MapPair{
 			Key:   []byte("map-key-1"),
 			Value: []byte("map-value-1"),
@@ -317,7 +317,7 @@ func TestRBTreesMap_Random(t *testing.T) {
 	treeFlattened := tree.flattenInOrder()
 	require.Equal(t, len(uniqueKeys), len(treeFlattened))
 	for _, entry := range treeFlattened {
-		_, ok := uniqueKeys[fmt.Sprint(entry.key)]
+		_, ok := uniqueKeys[string(entry.key)]
 		require.True(t, ok)
 	}
 	validateRBTree(t, tree.root)
@@ -331,7 +331,7 @@ func TestRBTreesMulti_Random(t *testing.T) {
 	for i := 0; i < amount; i++ {
 		key := make([]byte, keySize)
 		rand.Read(key)
-		uniqueKeys[fmt.Sprint(key)] = member
+		uniqueKeys[string(key)] = member
 		values := []value{}
 		for j := 0; j < 5; j++ {
 			values = append(values, value{value: []byte{uint8(i * j)}, tombstone: false})
@@ -343,7 +343,7 @@ func TestRBTreesMulti_Random(t *testing.T) {
 	treeFlattened := tree.flattenInOrder()
 	require.Equal(t, len(uniqueKeys), len(treeFlattened))
 	for _, entry := range treeFlattened {
-		_, ok := uniqueKeys[fmt.Sprint(entry.key)]
+		_, ok := uniqueKeys[string(entry.key)]
 		require.True(t, ok)
 	}
 	validateRBTree(t, tree.root)

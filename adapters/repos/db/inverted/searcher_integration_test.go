@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -98,7 +98,7 @@ func TestObjects(t *testing.T) {
 		}
 	})
 
-	bitmapFactory := roaringset.NewBitmapFactory(newFakeMaxIDGetter(docIDCounter))
+	bitmapFactory := roaringset.NewBitmapFactory(roaringset.NewBitmapBufPoolNoop(), newFakeMaxIDGetter(docIDCounter))
 
 	searcher := NewSearcher(logger, store, createSchema().GetClass, nil, nil,
 		fakeStopwordDetector{}, 2, func() bool { return false }, "",
@@ -120,7 +120,7 @@ func TestObjects(t *testing.T) {
 					},
 				}}
 				objs, err := searcher.Objects(context.Background(), numObjects,
-					filter, nil, additional.Properties{}, className, []string{propName})
+					filter, nil, additional.Properties{}, className, []string{propName}, nil)
 				assert.Nil(t, err)
 				assert.Len(t, objs, numObjects-multiplier)
 			}
@@ -140,7 +140,7 @@ func TestObjects(t *testing.T) {
 					},
 				}}
 				objs, err := searcher.Objects(context.Background(), numObjects,
-					filter, nil, additional.Properties{}, className, []string{propName})
+					filter, nil, additional.Properties{}, className, []string{propName}, nil)
 				assert.Nil(t, err)
 				assert.Len(t, objs, multiplier)
 			}
@@ -197,7 +197,7 @@ func TestDocIDs(t *testing.T) {
 		}
 	})
 
-	bitmapFactory := roaringset.NewBitmapFactory(newFakeMaxIDGetter(docIDCounter - 1))
+	bitmapFactory := roaringset.NewBitmapFactory(roaringset.NewBitmapBufPoolNoop(), newFakeMaxIDGetter(docIDCounter-1))
 
 	searcher := NewSearcher(logger, store, createSchema().GetClass, nil, nil,
 		fakeStopwordDetector{}, 2, func() bool { return false }, "",

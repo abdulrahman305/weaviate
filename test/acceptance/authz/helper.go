@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	gql "github.com/weaviate/weaviate/client/graphql"
 	"github.com/weaviate/weaviate/grpc/generated/protocol/v1"
+	"github.com/weaviate/weaviate/usecases/auth/authorization"
 
 	"github.com/go-openapi/strfmt"
 	"github.com/weaviate/weaviate/client/objects"
@@ -99,6 +100,11 @@ func deleteObjectDeprecated(t *testing.T, id strfmt.UUID, key string) (*objects.
 func updateObject(t *testing.T, object *models.Object, key string) (*objects.ObjectsClassPatchNoContent, error) {
 	params := objects.NewObjectsClassPatchParams().WithBody(object).WithID(object.ID).WithClassName(object.Class)
 	return helper.Client(t).Objects.ObjectsClassPatch(params, helper.CreateAuth(key))
+}
+
+func replaceObject(t *testing.T, object *models.Object, key string) (*objects.ObjectsClassPutOK, error) {
+	params := objects.NewObjectsClassPutParams().WithBody(object).WithID(object.ID).WithClassName(object.Class)
+	return helper.Client(t).Objects.ObjectsClassPut(params, helper.CreateAuth(key))
 }
 
 func addRef(t *testing.T, fromId strfmt.UUID, fromProp string, ref *models.SingleRef, key string) (*objects.ObjectsReferencesCreateOK, error) {
@@ -186,6 +192,33 @@ func updateTenantStatus(t *testing.T, class string, tenants []*models.Tenant, ke
 	params := clschema.NewTenantsUpdateParams().WithClassName(class).WithBody(tenants)
 	_, err := helper.Client(t).Schema.TenantsUpdate(params, helper.CreateAuth(key))
 	return err
+}
+
+func batchReferencesPermissions(from, to, tenant string) []*models.Permission {
+	return []*models.Permission{
+		helper.NewCollectionsPermission().WithAction(authorization.ReadCollections).WithCollection(from).Permission(),
+		helper.NewDataPermission().WithAction(authorization.UpdateData).WithCollection(from).WithTenant(tenant).Permission(),
+		helper.NewDataPermission().WithAction(authorization.ReadData).WithCollection(to).WithTenant(tenant).Permission(),
+	}
+}
+
+func addReferencePermissions(from, to, tenant string) []*models.Permission {
+	return []*models.Permission{
+		helper.NewCollectionsPermission().WithAction(authorization.ReadCollections).WithCollection(from).Permission(),
+		helper.NewCollectionsPermission().WithAction(authorization.ReadCollections).WithCollection(to).Permission(),
+		helper.NewDataPermission().WithAction(authorization.UpdateData).WithCollection(from).WithTenant(tenant).Permission(),
+		helper.NewDataPermission().WithAction(authorization.ReadData).WithCollection(to).WithTenant(tenant).Permission(),
+	}
+}
+
+func deleteReferencePermissions(from, to, tenant string) []*models.Permission {
+	return []*models.Permission{
+		helper.NewCollectionsPermission().WithAction(authorization.ReadCollections).WithCollection(from).Permission(),
+		helper.NewCollectionsPermission().WithAction(authorization.ReadCollections).WithCollection(to).Permission(),
+		helper.NewDataPermission().WithAction(authorization.UpdateData).WithCollection(from).WithTenant(tenant).Permission(),
+		helper.NewDataPermission().WithAction(authorization.ReadData).WithCollection(from).WithTenant(tenant).Permission(),
+		helper.NewDataPermission().WithAction(authorization.ReadData).WithCollection(to).WithTenant(tenant).Permission(),
+	}
 }
 
 type logScanner struct {

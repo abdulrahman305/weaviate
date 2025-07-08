@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -23,7 +23,7 @@ import (
 	"github.com/go-openapi/swag"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/weaviate/weaviate/deprecations"
 	entcfg "github.com/weaviate/weaviate/entities/config"
@@ -32,6 +32,7 @@ import (
 	entsentry "github.com/weaviate/weaviate/entities/sentry"
 	"github.com/weaviate/weaviate/entities/vectorindex/common"
 	"github.com/weaviate/weaviate/usecases/cluster"
+	"github.com/weaviate/weaviate/usecases/config/runtime"
 	"github.com/weaviate/weaviate/usecases/monitoring"
 )
 
@@ -91,14 +92,22 @@ type Flags struct {
 }
 
 type SchemaHandlerConfig struct {
-	MaximumAllowedCollectionsCount   int         `json:"maximum_allowed_collections_count" yaml:"maximum_allowed_collections_count"`
-	MaximumAllowedCollectionsCountFn func() *int `json:"-" yaml:"-"`
+	MaximumAllowedCollectionsCount *runtime.DynamicValue[int] `json:"maximum_allowed_collections_count" yaml:"maximum_allowed_collections_count"`
 }
 
 type RuntimeOverrides struct {
 	Enabled      bool          `json:"enabled"`
 	Path         string        `json:"path" yaml:"path"`
 	LoadInterval time.Duration `json:"load_interval" yaml:"load_interval"`
+}
+
+// UsageConfig holds configuration for usage data collection and upload
+type UsageConfig struct {
+	GCSAuth        *runtime.DynamicValue[bool]          `json:"usage_gcs_auth" yaml:"usage_gcs_auth"`
+	GCSBucket      *runtime.DynamicValue[string]        `json:"usage_gcs_bucket" yaml:"usage_gcs_bucket"`
+	GCSPrefix      *runtime.DynamicValue[string]        `json:"usage_gcs_prefix" yaml:"usage_gcs_prefix"`
+	ScrapeInterval *runtime.DynamicValue[time.Duration] `json:"usage_scrape_interval" yaml:"usage_scrape_interval"`
+	PolicyVersion  *runtime.DynamicValue[string]        `json:"usage_policy_version" yaml:"usage_policy_version"`
 }
 
 // Config outline of the config file
@@ -134,8 +143,10 @@ type Config struct {
 	ReindexVectorDimensionsAtStartup    bool                     `json:"reindex_vector_dimensions_at_startup" yaml:"reindex_vector_dimensions_at_startup"`
 	DisableLazyLoadShards               bool                     `json:"disable_lazy_load_shards" yaml:"disable_lazy_load_shards"`
 	ForceFullReplicasSearch             bool                     `json:"force_full_replicas_search" yaml:"force_full_replicas_search"`
+	TransferInactivityTimeout           time.Duration            `json:"transfer_inactivity_timeout" yaml:"transfer_inactivity_timeout"`
 	RecountPropertiesAtStartup          bool                     `json:"recount_properties_at_startup" yaml:"recount_properties_at_startup"`
 	ReindexSetToRoaringsetAtStartup     bool                     `json:"reindex_set_to_roaringset_at_startup" yaml:"reindex_set_to_roaringset_at_startup"`
+	ReindexerGoroutinesFactor           float64                  `json:"reindexer_goroutines_factor" yaml:"reindexer_goroutines_factor"`
 	ReindexMapToBlockmaxAtStartup       bool                     `json:"reindex_map_to_blockmax_at_startup" yaml:"reindex_map_to_blockmax_at_startup"`
 	ReindexMapToBlockmaxConfig          MapToBlockamaxConfig     `json:"reindex_map_to_blockmax_config" yaml:"reindex_map_to_blockmax_config"`
 	IndexMissingTextFilterableAtStartup bool                     `json:"index_missing_text_filterable_at_startup" yaml:"index_missing_text_filterable_at_startup"`
@@ -150,7 +161,9 @@ type Config struct {
 	Sentry                              *entsentry.ConfigOpts    `json:"sentry" yaml:"sentry"`
 	MetadataServer                      MetadataServer           `json:"metadata_server" yaml:"metadata_server"`
 	SchemaHandlerConfig                 SchemaHandlerConfig      `json:"schema" yaml:"schema"`
-
+	DistributedTasks                    DistributedTasksConfig   `json:"distributed_tasks" yaml:"distributed_tasks"`
+	ReplicationEngineMaxWorkers         int                      `json:"replication_engine_max_workers" yaml:"replication_engine_max_workers"`
+	ReplicationEngineFileCopyWorkers    int                      `json:"replication_engine_file_copy_workers" yaml:"replication_engine_file_copy_workers"`
 	// Raft Specific configuration
 	// TODO-RAFT: Do we want to be able to specify these with config file as well ?
 	Raft Raft
@@ -159,15 +172,75 @@ type Config struct {
 	ReindexIndexesAtStartup map[string][]string `json:"reindex_indexes_at_startup" yaml:"reindex_indexes_at_startup"`
 
 	RuntimeOverrides RuntimeOverrides `json:"runtime_overrides" yaml:"runtime_overrides"`
+
+	ReplicaMovementDisabled         bool                                 `json:"replica_movement_disabled" yaml:"replica_movement_disabled"`
+	ReplicaMovementMinimumAsyncWait *runtime.DynamicValue[time.Duration] `json:"REPLICA_MOVEMENT_MINIMUM_ASYNC_WAIT" yaml:"REPLICA_MOVEMENT_MINIMUM_ASYNC_WAIT"`
+
+	// TenantActivityReadLogLevel is 'debug' by default as every single READ
+	// interaction with a tenant leads to a log line. However, this may
+	// temporarily be desired, e.g. for analysis or debugging purposes. In this
+	// case the log level can be elevated, e.g. to 'info'. This is overall less
+	// noisy than changing the global log level, but still allows to see all
+	// tenant read activity.
+	TenantActivityReadLogLevel *runtime.DynamicValue[string] `json:"tenant_activity_read_log_level" yaml:"tenant_activity_read_log_level"`
+	// TenantActivityWriteLogLevel is 'debug' by default as every single WRITE
+	// interaction with a tenant leads to a log line. However, this may
+	// temporarily be desired, e.g. for analysis or debugging purposes. In this
+	// case the log level can be elevated, e.g. to 'info'. This is overall less
+	// noisy than changing the global log level, but still allows to see all
+	// tenant write activity.
+	TenantActivityWriteLogLevel *runtime.DynamicValue[string] `json:"tenant_activity_write_log_level" yaml:"tenant_activity_write_log_level"`
+
+	// RevectorizeCheck is an optimization where Weaviate checks if a vector can
+	// be reused from a previous version of the object, for example because the
+	// only change was an update of a property that is excluded from
+	// vectorization. This check is on by default (backward-compatibility).
+	//
+	// However, this check comes at a cost, it means that every single insert
+	// will turn into a read-before-write pattern, even if the inserted object is
+	// new. That is because the logic first needs to check if the object even
+	// exists. In cases where write throughput matters and the overwhelming
+	// majority of inserts are new, unique objects, it might be advisable to turn
+	// this feature off using the provided flag.
+	RevectorizeCheckDisabled *runtime.DynamicValue[bool] `json:"revectorize_check_disabled" yaml:"revectorize_check_disabled"`
+
+	QuerySlowLogEnabled   *runtime.DynamicValue[bool]          `json:"query_slow_log_enabled" yaml:"query_slow_log_enabled"`
+	QuerySlowLogThreshold *runtime.DynamicValue[time.Duration] `json:"query_slow_log_threshold" yaml:"query_slow_log_threshold"`
+
+	// InvertedSorterDisabled forces the "objects bucket" strategy and doesn't
+	// not consider inverted sorting, even when the query planner thinks this is
+	// the better option.
+	//
+	// Most users should never set this flag, it exists for two reasons:
+	//  - For benchmarking reasons, this flag can be used to evaluate the
+	//		(positive) impact of the inverted sorter.
+	//  - As a safety net to revert to the old behavior in case there is a bug
+	//		in the inverted indexer despite the very extensive testing.
+	//
+	// This flat may be removed in the future.
+	InvertedSorterDisabled *runtime.DynamicValue[bool] `json:"inverted_sorter_disabled" yaml:"inverted_sorter_disabled"`
+
+	// Usage configuration for the usage module
+	Usage UsageConfig `json:"usage" yaml:"usage"`
 }
 
 type MapToBlockamaxConfig struct {
-	SwapBuckets               bool `json:"swap_buckets" yaml:"swap_buckets"`
-	UnswapBuckets             bool `json:"unswap_buckets" yaml:"unswap_buckets"`
-	TidyBuckets               bool `json:"tidy_buckets" yaml:"tidy_buckets"`
-	Rollback                  bool `json:"rollback" yaml:"rollback"`
-	ProcessingDurationSeconds int  `json:"processing_duration_seconds" yaml:"processing_duration_seconds"`
-	PauseDurationSeconds      int  `json:"pause_duration_seconds" yaml:"pause_duration_seconds"`
+	SwapBuckets                bool                     `json:"swap_buckets" yaml:"swap_buckets"`
+	UnswapBuckets              bool                     `json:"unswap_buckets" yaml:"unswap_buckets"`
+	TidyBuckets                bool                     `json:"tidy_buckets" yaml:"tidy_buckets"`
+	ReloadShards               bool                     `json:"reload_shards" yaml:"reload_shards"`
+	Rollback                   bool                     `json:"rollback" yaml:"rollback"`
+	ConditionalStart           bool                     `json:"conditional_start" yaml:"conditional_start"`
+	ProcessingDurationSeconds  int                      `json:"processing_duration_seconds" yaml:"processing_duration_seconds"`
+	PauseDurationSeconds       int                      `json:"pause_duration_seconds" yaml:"pause_duration_seconds"`
+	PerObjectDelayMilliseconds int                      `json:"per_object_delay_milliseconds" yaml:"per_object_delay_milliseconds"`
+	Selected                   []CollectionPropsTenants `json:"selected" yaml:"selected"`
+}
+
+type CollectionPropsTenants struct {
+	Collection string   `json:"collection" yaml:"collection"`
+	Props      []string `json:"props" yaml:"props"`
+	Tenants    []string `json:"tenants" yaml:"tenants"`
 }
 
 // Validate the configuration
@@ -239,12 +312,10 @@ func (c *Config) validateDefaultVectorDistanceMetric() error {
 }
 
 type AutoSchema struct {
-	Enabled   bool         `json:"enabled" yaml:"enabled"`
-	EnabledFn func() *bool `json:"-" yaml:"-"`
-
-	DefaultString string `json:"defaultString" yaml:"defaultString"`
-	DefaultNumber string `json:"defaultNumber" yaml:"defaultNumber"`
-	DefaultDate   string `json:"defaultDate" yaml:"defaultDate"`
+	Enabled       *runtime.DynamicValue[bool] `json:"enabled" yaml:"enabled"`
+	DefaultString string                      `json:"defaultString" yaml:"defaultString"`
+	DefaultNumber string                      `json:"defaultNumber" yaml:"defaultNumber"`
+	DefaultDate   string                      `json:"defaultDate" yaml:"defaultDate"`
 }
 
 func (a AutoSchema) Validate() error {
@@ -291,18 +362,33 @@ type Profiling struct {
 	Port                 int  `json:"port" yaml:"port"`
 }
 
+type DistributedTasksConfig struct {
+	Enabled               bool          `json:"enabled" yaml:"enabled"`
+	CompletedTaskTTL      time.Duration `json:"completedTaskTTL" yaml:"completedTaskTTL"`
+	SchedulerTickInterval time.Duration `json:"schedulerTickInterval" yaml:"schedulerTickInterval"`
+}
+
 type Persistence struct {
-	DataPath                            string `json:"dataPath" yaml:"dataPath"`
-	MemtablesFlushDirtyAfter            int    `json:"flushDirtyMemtablesAfter" yaml:"flushDirtyMemtablesAfter"`
-	MemtablesMaxSizeMB                  int    `json:"memtablesMaxSizeMB" yaml:"memtablesMaxSizeMB"`
-	MemtablesMinActiveDurationSeconds   int    `json:"memtablesMinActiveDurationSeconds" yaml:"memtablesMinActiveDurationSeconds"`
-	MemtablesMaxActiveDurationSeconds   int    `json:"memtablesMaxActiveDurationSeconds" yaml:"memtablesMaxActiveDurationSeconds"`
-	LSMMaxSegmentSize                   int64  `json:"lsmMaxSegmentSize" yaml:"lsmMaxSegmentSize"`
-	LSMSegmentsCleanupIntervalSeconds   int    `json:"lsmSegmentsCleanupIntervalSeconds" yaml:"lsmSegmentsCleanupIntervalSeconds"`
-	LSMSeparateObjectsCompactions       bool   `json:"lsmSeparateObjectsCompactions" yaml:"lsmSeparateObjectsCompactions"`
-	LSMEnableSegmentsChecksumValidation bool   `json:"lsmEnableSegmentsChecksumValidation" yaml:"lsmEnableSegmentsChecksumValidation"`
-	LSMCycleManagerRoutinesFactor       int    `json:"lsmCycleManagerRoutinesFactor" yaml:"lsmCycleManagerRoutinesFactor"`
-	HNSWMaxLogSize                      int64  `json:"hnswMaxLogSize" yaml:"hnswMaxLogSize"`
+	DataPath                                     string `json:"dataPath" yaml:"dataPath"`
+	MemtablesFlushDirtyAfter                     int    `json:"flushDirtyMemtablesAfter" yaml:"flushDirtyMemtablesAfter"`
+	MemtablesMaxSizeMB                           int    `json:"memtablesMaxSizeMB" yaml:"memtablesMaxSizeMB"`
+	MemtablesMinActiveDurationSeconds            int    `json:"memtablesMinActiveDurationSeconds" yaml:"memtablesMinActiveDurationSeconds"`
+	MemtablesMaxActiveDurationSeconds            int    `json:"memtablesMaxActiveDurationSeconds" yaml:"memtablesMaxActiveDurationSeconds"`
+	LSMMaxSegmentSize                            int64  `json:"lsmMaxSegmentSize" yaml:"lsmMaxSegmentSize"`
+	LSMSegmentsCleanupIntervalSeconds            int    `json:"lsmSegmentsCleanupIntervalSeconds" yaml:"lsmSegmentsCleanupIntervalSeconds"`
+	LSMSeparateObjectsCompactions                bool   `json:"lsmSeparateObjectsCompactions" yaml:"lsmSeparateObjectsCompactions"`
+	LSMEnableSegmentsChecksumValidation          bool   `json:"lsmEnableSegmentsChecksumValidation" yaml:"lsmEnableSegmentsChecksumValidation"`
+	LSMCycleManagerRoutinesFactor                int    `json:"lsmCycleManagerRoutinesFactor" yaml:"lsmCycleManagerRoutinesFactor"`
+	IndexRangeableInMemory                       bool   `json:"indexRangeableInMemory" yaml:"indexRangeableInMemory"`
+	MinMMapSize                                  int64  `json:"minMMapSize" yaml:"minMMapSize"`
+	LazySegmentsDisabled                         bool   `json:"lazySegmentsDisabled" yaml:"lazySegmentsDisabled"`
+	MaxReuseWalSize                              int64  `json:"MaxReuseWalSize" yaml:"MaxReuseWalSize"`
+	HNSWMaxLogSize                               int64  `json:"hnswMaxLogSize" yaml:"hnswMaxLogSize"`
+	HNSWDisableSnapshots                         bool   `json:"hnswDisableSnapshots" yaml:"hnswDisableSnapshots"`
+	HNSWSnapshotIntervalSeconds                  int    `json:"hnswSnapshotIntervalSeconds" yaml:"hnswSnapshotIntervalSeconds"`
+	HNSWSnapshotOnStartup                        bool   `json:"hnswSnapshotOnStartup" yaml:"hnswSnapshotOnStartup"`
+	HNSWSnapshotMinDeltaCommitlogsNumber         int    `json:"hnswSnapshotMinDeltaCommitlogsNumber" yaml:"hnswSnapshotMinDeltaCommitlogsNumber"`
+	HNSWSnapshotMinDeltaCommitlogsSizePercentage int    `json:"hnswSnapshotMinDeltaCommitlogsSizePercentage" yaml:"hnswSnapshotMinDeltaCommitlogsSizePercentage"`
 }
 
 // DefaultPersistenceDataPath is the default location for data directory when no location is provided
@@ -324,8 +410,20 @@ const DefaultPersistenceLSMCycleManagerRoutinesFactor = 2
 const DefaultPersistenceHNSWMaxLogSize = 500 * 1024 * 1024 // 500MB for backward compatibility
 
 const (
-	DefaultMapToBlockmaxProcessingDurationSeconds = 3 * 60
-	DefaultMapToBlockmaxPauseDurationSeconds      = 60
+	// minimal interval for new hnws snapshot to be created after last one
+	DefaultHNSWSnapshotIntervalSeconds                  = 6 * 3600 // 6h
+	DefaultHNSWSnapshotDisabled                         = true
+	DefaultHNSWSnapshotOnStartup                        = true
+	DefaultHNSWSnapshotMinDeltaCommitlogsNumber         = 1
+	DefaultHNSWSnapshotMinDeltaCommitlogsSizePercentage = 5 // 5%
+)
+
+const (
+	DefaultReindexerGoroutinesFactor = 0.5
+
+	DefaultMapToBlockmaxProcessingDurationSeconds  = 3 * 60
+	DefaultMapToBlockmaxPauseDurationSeconds       = 60
+	DefaultMapToBlockmaxPerObjectDelayMilliseconds = 0
 )
 
 // MetadataServer is experimental.
@@ -345,6 +443,11 @@ const (
 const DefaultHNSWVisitedListPoolSize = -1 // unlimited for backward compatibility
 
 const DefaultHNSWFlatSearchConcurrency = 1 // 1 for backward compatibility
+
+const (
+	DefaultPersistenceMinMMapSize     = 8192 // 8kb by default
+	DefaultPersistenceMaxReuseWalSize = 4096 // 4kb by default
+)
 
 func (p Persistence) Validate() error {
 	if p.DataPath == "" {
@@ -418,14 +521,19 @@ func (r ResourceUsage) Validate() error {
 }
 
 type Raft struct {
-	Port                   int
-	InternalRPCPort        int
-	RPCMessageMaxSize      int
-	Join                   []string
-	SnapshotThreshold      uint64
+	Port              int
+	InternalRPCPort   int
+	RPCMessageMaxSize int
+	Join              []string
+
+	SnapshotInterval  time.Duration
+	SnapshotThreshold uint64
+	TrailingLogs      uint64
+
 	HeartbeatTimeout       time.Duration
 	ElectionTimeout        time.Duration
-	SnapshotInterval       time.Duration
+	LeaderLeaseTimeout     time.Duration
+	TimeoutsMultiplier     int
 	ConsistencyWaitTimeout time.Duration
 
 	BootstrapTimeout   time.Duration

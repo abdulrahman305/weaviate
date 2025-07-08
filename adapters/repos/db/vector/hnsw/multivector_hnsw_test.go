@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -89,10 +89,11 @@ func TestMultiVectorHnsw(t *testing.T) {
 				return multiVectors[id], nil
 			},
 		}, ent.UserConfig{
-			MaxConnections: maxConnections,
-			EFConstruction: efConstruction,
-			EF:             ef,
-			Multivector:    ent.MultivectorConfig{Enabled: true},
+			VectorCacheMaxObjects: 1e12,
+			MaxConnections:        maxConnections,
+			EFConstruction:        efConstruction,
+			EF:                    ef,
+			Multivector:           ent.MultivectorConfig{Enabled: true},
 		}, cyclemanager.NewCallbackGroupNoop(), testinghelpers.NewDummyStore(t))
 		require.Nil(t, err)
 		vectorIndex = index
@@ -225,10 +226,11 @@ func TestMultiVectorCompressHnsw(t *testing.T) {
 					return multiVectors[id], nil
 				},
 			}, ent.UserConfig{
-				MaxConnections: maxConnections,
-				EFConstruction: efConstruction,
-				EF:             ef,
-				Multivector:    ent.MultivectorConfig{Enabled: true},
+				VectorCacheMaxObjects: 1e12,
+				MaxConnections:        maxConnections,
+				EFConstruction:        efConstruction,
+				EF:                    ef,
+				Multivector:           ent.MultivectorConfig{Enabled: true},
 			},
 				cyclemanager.NewCallbackGroupNoop(), testinghelpers.NewDummyStore(t))
 			require.Nil(t, err)
@@ -263,10 +265,11 @@ func TestMultiVectorBQHnsw(t *testing.T) {
 				return multiVectors[id], nil
 			},
 		}, ent.UserConfig{
-			MaxConnections: maxConnections,
-			EFConstruction: efConstruction,
-			EF:             ef,
-			Multivector:    ent.MultivectorConfig{Enabled: true},
+			VectorCacheMaxObjects: 1e12,
+			MaxConnections:        maxConnections,
+			EFConstruction:        efConstruction,
+			EF:                    ef,
+			Multivector:           ent.MultivectorConfig{Enabled: true},
 			// BQ:             ent.BQConfig{Enabled: true},
 		}, cyclemanager.NewCallbackGroupNoop(), testinghelpers.NewDummyStore(t))
 		require.Nil(t, err)
@@ -277,9 +280,10 @@ func TestMultiVectorBQHnsw(t *testing.T) {
 			require.Nil(t, err)
 		}
 		uc := ent.UserConfig{
-			MaxConnections: maxConnections,
-			EFConstruction: efConstruction,
-			EF:             ef,
+			VectorCacheMaxObjects: 1e12,
+			MaxConnections:        maxConnections,
+			EFConstruction:        efConstruction,
+			EF:                    ef,
 			Multivector: ent.MultivectorConfig{
 				Enabled: true,
 			},
@@ -351,9 +355,10 @@ func TestMultivectorPersistence(t *testing.T) {
 			return multiVectors[id], nil
 		},
 	}, ent.UserConfig{
-		MaxConnections: maxConnections,
-		EFConstruction: efConstruction,
-		EF:             ef,
+		VectorCacheMaxObjects: 1e12,
+		MaxConnections:        maxConnections,
+		EFConstruction:        efConstruction,
+		EF:                    ef,
 		Multivector: ent.MultivectorConfig{
 			Enabled: true,
 		},
@@ -392,9 +397,10 @@ func TestMultivectorPersistence(t *testing.T) {
 			return multiVectors[id], nil
 		},
 	}, ent.UserConfig{
-		MaxConnections: maxConnections,
-		EFConstruction: efConstruction,
-		EF:             ef,
+		VectorCacheMaxObjects: 1e12,
+		MaxConnections:        maxConnections,
+		EFConstruction:        efConstruction,
+		EF:                    ef,
 		Multivector: ent.MultivectorConfig{
 			Enabled: true,
 		},

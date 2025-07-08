@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -18,12 +18,11 @@ import (
 	"io"
 	"time"
 
-	"github.com/weaviate/weaviate/cluster/router/types"
-	"github.com/weaviate/weaviate/entities/dto"
-
 	"github.com/go-openapi/strfmt"
+	"github.com/weaviate/weaviate/cluster/router/types"
 	"github.com/weaviate/weaviate/entities/additional"
 	"github.com/weaviate/weaviate/entities/aggregation"
+	"github.com/weaviate/weaviate/entities/dto"
 	"github.com/weaviate/weaviate/entities/filters"
 	"github.com/weaviate/weaviate/entities/models"
 	"github.com/weaviate/weaviate/entities/schema"
@@ -31,6 +30,7 @@ import (
 	"github.com/weaviate/weaviate/entities/searchparams"
 	"github.com/weaviate/weaviate/entities/storobj"
 	"github.com/weaviate/weaviate/usecases/cluster/mocks"
+	"github.com/weaviate/weaviate/usecases/file"
 	"github.com/weaviate/weaviate/usecases/objects"
 	"github.com/weaviate/weaviate/usecases/replica"
 	"github.com/weaviate/weaviate/usecases/replica/hashtree"
@@ -49,6 +49,10 @@ func (f *fakeSchemaGetter) GetSchemaSkipAuth() schema.Schema {
 
 func (f *fakeSchemaGetter) ReadOnlyClass(class string) *models.Class {
 	return f.schema.GetClass(class)
+}
+
+func (f *fakeSchemaGetter) ResolveAlias(string) string {
+	return ""
 }
 
 func (f *fakeSchemaGetter) CopyShardingState(class string) *sharding.State {
@@ -263,14 +267,36 @@ func (f *fakeRemoteClient) PutFile(ctx context.Context, hostName, indexName, sha
 	return nil
 }
 
-func (f *fakeRemoteClient) PauseAndListFiles(ctx context.Context, hostName, indexName, shardName string) ([]string, error) {
+func (f *fakeRemoteClient) PauseFileActivity(ctx context.Context, hostName, indexName, shardName string, schemaVersion uint64) error {
+	return nil
+}
+
+func (f *fakeRemoteClient) ResumeFileActivity(ctx context.Context, hostName, indexName, shardName string) error {
+	return nil
+}
+
+func (f *fakeRemoteClient) ListFiles(ctx context.Context, hostName, indexName, shardName string) ([]string, error) {
 	return nil, nil
+}
+
+func (f *fakeRemoteClient) GetFileMetadata(ctx context.Context, hostName, indexName, shardName,
+	fileName string,
+) (file.FileMetadata, error) {
+	return file.FileMetadata{}, nil
 }
 
 func (f *fakeRemoteClient) GetFile(ctx context.Context, hostName, indexName, shardName,
 	fileName string,
 ) (io.ReadCloser, error) {
 	return nil, nil
+}
+
+func (f *fakeRemoteClient) AddAsyncReplicationTargetNode(ctx context.Context, hostName, indexName, shardName string, targetNodeOverride additional.AsyncReplicationTargetNodeOverride, schemaVersion uint64) error {
+	return nil
+}
+
+func (f *fakeRemoteClient) RemoveAsyncReplicationTargetNode(ctx context.Context, hostName, indexName, shardName string, targetNodeOverride additional.AsyncReplicationTargetNodeOverride) error {
+	return nil
 }
 
 type fakeNodeResolver struct{}
@@ -285,7 +311,7 @@ func (f *fakeNodeResolver) NodeHostname(string) (string, bool) {
 
 type fakeRemoteNodeClient struct{}
 
-func (f *fakeRemoteNodeClient) GetNodeStatus(ctx context.Context, hostName, className, output string) (*models.NodeStatus, error) {
+func (f *fakeRemoteNodeClient) GetNodeStatus(ctx context.Context, hostName, className, shardName, output string) (*models.NodeStatus, error) {
 	return &models.NodeStatus{}, nil
 }
 
@@ -350,8 +376,8 @@ func (fakeReplicationClient) Exists(ctx context.Context, hostName, indexName,
 func (*fakeReplicationClient) FetchObject(ctx context.Context, hostName, indexName,
 	shardName string, id strfmt.UUID, props search.SelectProperties,
 	additional additional.Properties, numRetries int,
-) (objects.Replica, error) {
-	return objects.Replica{}, nil
+) (replica.Replica, error) {
+	return replica.Replica{}, nil
 }
 
 func (*fakeReplicationClient) DigestObjects(ctx context.Context,
@@ -362,7 +388,7 @@ func (*fakeReplicationClient) DigestObjects(ctx context.Context,
 
 func (*fakeReplicationClient) FetchObjects(ctx context.Context, host,
 	index, shard string, ids []strfmt.UUID,
-) ([]objects.Replica, error) {
+) ([]replica.Replica, error) {
 	return nil, nil
 }
 

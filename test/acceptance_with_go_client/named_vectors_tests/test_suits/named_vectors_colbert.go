@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -15,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	acceptance_with_go_client "acceptance_tests_with_client"
 	"acceptance_tests_with_client/fixtures"
@@ -73,7 +74,7 @@ func testColBERT(host string, asyncIndexingEnabled bool) func(t *testing.T) {
 				},
 			}
 
-			performNearVector := func(t *testing.T, client *wvt.Client, className string) {
+			performNearVector := func(t *testing.T, ct *assert.CollectT, client *wvt.Client, className string) {
 				nearVector := client.GraphQL().NearVectorArgBuilder().
 					WithVector([][]float32{{-0.000001, -0.000001}, {-0.000001, -0.000001}, {-0.000001, -0.000001}}).
 					WithTargetVectors(byoc)
@@ -85,10 +86,15 @@ func testColBERT(host string, asyncIndexingEnabled bool) func(t *testing.T) {
 				require.NoError(t, err)
 				ids := acceptance_with_go_client.GetIds(t, resp, className)
 				require.NotEmpty(t, ids)
-				assert.Len(t, ids, len(objects))
+				if ct != nil {
+					// adds ability to be used with assert.EventuallyWithT(...)
+					assert.Len(ct, ids, len(objects))
+				} else {
+					assert.Len(t, ids, len(objects))
+				}
 			}
 
-			performNearObject := func(t *testing.T, client *wvt.Client, className string) {
+			performNearObject := func(t *testing.T, ct *assert.CollectT, client *wvt.Client, className string) {
 				nearObject := client.GraphQL().NearObjectArgBuilder().
 					WithID(objects[0].ID).
 					WithTargetVectors(byoc)
@@ -100,7 +106,12 @@ func testColBERT(host string, asyncIndexingEnabled bool) func(t *testing.T) {
 				require.NoError(t, err)
 				ids := acceptance_with_go_client.GetIds(t, resp, className)
 				require.NotEmpty(t, ids)
-				assert.Len(t, ids, len(objects))
+				if ct != nil {
+					// adds ability to be used with assert.EventuallyWithT(...)
+					assert.Len(ct, ids, len(objects))
+				} else {
+					assert.Len(t, ids, len(objects))
+				}
 			}
 
 			t.Run("create schema", func(t *testing.T) {
@@ -144,8 +155,8 @@ func testColBERT(host string, asyncIndexingEnabled bool) func(t *testing.T) {
 			})
 
 			t.Run("vector search after insert", func(t *testing.T) {
-				performNearVector(t, client, className)
-				performNearObject(t, client, className)
+				performNearVector(t, nil, client, className)
+				performNearObject(t, nil, client, className)
 			})
 
 			t.Run("check existence", func(t *testing.T) {
@@ -257,8 +268,8 @@ func testColBERT(host string, asyncIndexingEnabled bool) func(t *testing.T) {
 			})
 
 			t.Run("vector search after partial update", func(t *testing.T) {
-				performNearVector(t, client, className)
-				performNearObject(t, client, className)
+				performNearVector(t, nil, client, className)
+				performNearObject(t, nil, client, className)
 			})
 
 			t.Run("update all objects", func(t *testing.T) {
@@ -280,9 +291,12 @@ func testColBERT(host string, asyncIndexingEnabled bool) func(t *testing.T) {
 			})
 
 			t.Run("vector search after update of all objects", func(t *testing.T) {
-				performNearVector(t, client, className)
-				performNearObject(t, client, className)
+				assert.EventuallyWithT(t, func(ct *assert.CollectT) {
+					performNearVector(t, ct, client, className)
+					performNearObject(t, ct, client, className)
+				}, 5*time.Second, 1*time.Second)
 			})
+
 			t.Run("WithVector[s]PerTarget searches", func(t *testing.T) {
 				withVectorPerTargetTests := []struct {
 					name       string
@@ -424,11 +438,11 @@ func testColBERT(host string, asyncIndexingEnabled bool) func(t *testing.T) {
 						},
 					},
 					VectorIndexType: "hnsw",
-					Vectorizer:      "text2colbert-jinaai",
+					Vectorizer:      "text2multivec-jinaai",
 				}
 				err := client.Schema().ClassCreator().WithClass(class).Do(ctx)
 				require.Error(t, err)
-				assert.ErrorContains(t, err, `multi vector vectorizer: \"text2colbert-jinaai\" is only allowed to be defined using named vector configuration`)
+				assert.ErrorContains(t, err, `multi vector vectorizer: \"text2multivec-jinaai\" is only allowed to be defined using named vector configuration`)
 			})
 			t.Run("multi vector vectorizer with module config", func(t *testing.T) {
 				cleanup()
@@ -440,16 +454,16 @@ func testColBERT(host string, asyncIndexingEnabled bool) func(t *testing.T) {
 						},
 					},
 					ModuleConfig: map[string]interface{}{
-						"text2colbert-jinaai": map[string]interface{}{
+						"text2multivec-jinaai": map[string]interface{}{
 							"skip": true,
 						},
 					},
 					VectorIndexType: "hnsw",
-					Vectorizer:      "text2colbert-jinaai",
+					Vectorizer:      "text2multivec-jinaai",
 				}
 				err := client.Schema().ClassCreator().WithClass(class).Do(ctx)
 				require.Error(t, err)
-				assert.ErrorContains(t, err, `multi vector vectorizer: \"text2colbert-jinaai\" is only allowed to be defined using named vector configuration`)
+				assert.ErrorContains(t, err, `multi vector vectorizer: \"text2multivec-jinaai\" is only allowed to be defined using named vector configuration`)
 			})
 			t.Run("colbert vectorizer with multi vector index", func(t *testing.T) {
 				cleanup()
@@ -466,7 +480,7 @@ func testColBERT(host string, asyncIndexingEnabled bool) func(t *testing.T) {
 							"enabled": true,
 						},
 					},
-					Vectorizer: "text2colbert-jinaai",
+					Vectorizer: "text2multivec-jinaai",
 				}
 				err := client.Schema().ClassCreator().WithClass(class).Do(ctx)
 				require.Error(t, err)
@@ -555,7 +569,7 @@ func testColBERT(host string, asyncIndexingEnabled bool) func(t *testing.T) {
 					VectorConfig: map[string]models.VectorConfig{
 						"colbert": {
 							Vectorizer: map[string]interface{}{
-								"text2colbert-jinaai": map[string]interface{}{
+								"text2multivec-jinaai": map[string]interface{}{
 									"vectorizeClassName": false,
 								},
 							},
@@ -585,7 +599,7 @@ func testColBERT(host string, asyncIndexingEnabled bool) func(t *testing.T) {
 					VectorConfig: map[string]models.VectorConfig{
 						"colbert": {
 							Vectorizer: map[string]interface{}{
-								"text2colbert-jinaai": map[string]interface{}{
+								"text2multivec-jinaai": map[string]interface{}{
 									"vectorizeClassName": false,
 								},
 							},
@@ -620,7 +634,7 @@ func testColBERT(host string, asyncIndexingEnabled bool) func(t *testing.T) {
 					VectorConfig: map[string]models.VectorConfig{
 						"colbert": {
 							Vectorizer: map[string]interface{}{
-								"text2colbert-jinaai": map[string]interface{}{
+								"text2multivec-jinaai": map[string]interface{}{
 									"vectorizeClassName": false,
 								},
 							},
@@ -646,7 +660,7 @@ func testColBERT(host string, asyncIndexingEnabled bool) func(t *testing.T) {
 					VectorConfig: map[string]models.VectorConfig{
 						"colbert": {
 							Vectorizer: map[string]interface{}{
-								"text2colbert-jinaai": map[string]interface{}{
+								"text2multivec-jinaai": map[string]interface{}{
 									"vectorizeClassName": false,
 								},
 							},

@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -12,6 +12,7 @@
 package get
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -347,7 +348,7 @@ func (r *resolver) resolveGet(p graphql.ResolveParams, className string) (interf
 		tenant = tk.(string)
 	}
 
-	if err := r.authorizer.Authorize(principal, authorization.READ, authorization.ShardsData(className, tenant)...); err != nil {
+	if err := r.authorizer.Authorize(p.Context, principal, authorization.READ, authorization.ShardsData(className, tenant)...); err != nil {
 		return nil, err
 	}
 
@@ -375,7 +376,7 @@ func (r *resolver) resolveGet(p graphql.ResolveParams, className string) (interf
 	}
 	allPropsToAuthorize := append(properties, groupByProperties...)
 	for _, property := range allPropsToAuthorize {
-		if err := common_filters.AuthorizeProperty(r.authorizer, &property, principal); err != nil {
+		if err := common_filters.AuthorizeProperty(p.Context, r.authorizer, &property, principal); err != nil {
 			return nil, err
 		}
 	}
@@ -390,7 +391,7 @@ func (r *resolver) resolveGet(p graphql.ResolveParams, className string) (interf
 		return nil, fmt.Errorf("could not extract filters: %w", err)
 	}
 	if filters != nil {
-		if err = common_filters.AuthorizeFilters(r.authorizer, filters.Root, principal); err != nil {
+		if err = common_filters.AuthorizeFilters(p.Context, r.authorizer, filters.Root, principal); err != nil {
 			return nil, err
 		}
 	}
@@ -834,7 +835,7 @@ func extractInlineFragment(class string, fragment *ast.InlineFragment,
 	}
 
 	if className == "Beacon" {
-		return result, fmt.Errorf("retrieving cross-refs by beacon is not supported yet - coming soon!")
+		return result, errors.New("retrieving cross-refs by beacon is not supported yet - coming soon!")
 	}
 
 	subProperties, additionalProperties, _, err := extractProperties(class, fragment.SelectionSet, fragments, modulesProvider)

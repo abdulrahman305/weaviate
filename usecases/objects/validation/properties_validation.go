@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -358,7 +358,7 @@ func (v *Validator) cRef(ctx context.Context, propertyName string, pv interface{
 		for _, ref := range refValue {
 			refTyped, ok := ref.(map[string]interface{})
 			if !ok {
-				return nil, fmt.Errorf("Multiple references in %s.%s should be a list of maps, but we got: %T",
+				return nil, fmt.Errorf("multiple references in %s.%s should be a list of maps, but we got: %T",
 					className, propertyName, ref)
 			}
 

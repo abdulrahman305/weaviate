@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -18,11 +18,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/weaviate/weaviate/adapters/handlers/rest/authz/mocks"
 	"github.com/weaviate/weaviate/adapters/handlers/rest/operations/authz"
 	"github.com/weaviate/weaviate/entities/models"
 	"github.com/weaviate/weaviate/usecases/auth/authorization"
-	authZmocks "github.com/weaviate/weaviate/usecases/auth/authorization/mocks"
 	"github.com/weaviate/weaviate/usecases/auth/authorization/rbac/rbacconf"
 )
 
@@ -51,14 +49,22 @@ func TestGetRolesSuccess(t *testing.T) {
 				"testRole": {}, "root": {},
 			},
 		},
+		{
+			name:            "success without principal",
+			principal:       nil,
+			authorizedRoles: []string{"testRole"},
+			expectedRoles: map[string][]authorization.Policy{
+				"testRole": {},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			authorizer := authZmocks.NewAuthorizer(t)
-			controller := mocks.NewControllerAndGetUsers(t)
+			authorizer := authorization.NewMockAuthorizer(t)
+			controller := NewMockControllerAndGetUsers(t)
 			logger, _ := test.NewNullLogger()
-			authorizer.On("Authorize", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+			authorizer.On("Authorize", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 			controller.On("GetRoles").Return(tt.expectedRoles, nil)
 
 			h := &authZHandlers{
@@ -67,7 +73,7 @@ func TestGetRolesSuccess(t *testing.T) {
 				logger:     logger,
 				rbacconfig: rbacconf.Config{Enabled: true, RootUsers: []string{"root"}},
 			}
-			res := h.getRoles(authz.GetRolesParams{}, tt.principal)
+			res := h.getRoles(authz.GetRolesParams{HTTPRequest: req}, tt.principal)
 			parsed, ok := res.(*authz.GetRolesOK)
 			assert.True(t, ok)
 			assert.Len(t, parsed.Payload, len(tt.expectedRoles))

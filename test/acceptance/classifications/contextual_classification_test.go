@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -22,7 +22,6 @@ import (
 	"github.com/weaviate/weaviate/client/objects"
 	"github.com/weaviate/weaviate/entities/models"
 	"github.com/weaviate/weaviate/test/helper"
-	testhelper "github.com/weaviate/weaviate/test/helper"
 )
 
 func contextualClassification(t *testing.T) {
@@ -39,7 +38,7 @@ func contextualClassification(t *testing.T) {
 	id = res.Payload.ID
 
 	// wait for classification to be completed
-	testhelper.AssertEventuallyEqualWithFrequencyAndTimeout(t, "completed", func() interface{} {
+	helper.AssertEventuallyEqualWithFrequencyAndTimeout(t, "completed", func() interface{} {
 		res, err := helper.Client(t).Classifications.ClassificationsGet(classifications.NewClassificationsGetParams().
 			WithID(id.String()), nil)
 
@@ -48,19 +47,19 @@ func contextualClassification(t *testing.T) {
 	}, 100*time.Millisecond, 15*time.Second)
 
 	// wait for latest changes to be indexed / wait for consistency
-	testhelper.AssertEventuallyEqual(t, true, func() interface{} {
+	helper.AssertEventuallyEqual(t, true, func() interface{} {
 		res, err := helper.Client(t).Objects.ObjectsGet(objects.NewObjectsGetParams().
 			WithID(article1), nil)
 		require.Nil(t, err)
 		return res.Payload.Properties.(map[string]interface{})["ofCategory"] != nil
 	})
-	testhelper.AssertEventuallyEqual(t, true, func() interface{} {
+	helper.AssertEventuallyEqual(t, true, func() interface{} {
 		res, err := helper.Client(t).Objects.ObjectsGet(objects.NewObjectsGetParams().
 			WithID(article2), nil)
 		require.Nil(t, err)
 		return res.Payload.Properties.(map[string]interface{})["ofCategory"] != nil
 	})
-	testhelper.AssertEventuallyEqual(t, true, func() interface{} {
+	helper.AssertEventuallyEqual(t, true, func() interface{} {
 		res, err := helper.Client(t).Objects.ObjectsGet(objects.NewObjectsGetParams().
 			WithID(article3), nil)
 		require.Nil(t, err)

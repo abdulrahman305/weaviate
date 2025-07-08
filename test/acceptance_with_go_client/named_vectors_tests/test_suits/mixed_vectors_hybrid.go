@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -16,6 +16,8 @@ import (
 	"testing"
 
 	acceptance_with_go_client "acceptance_tests_with_client"
+
+	"github.com/weaviate/weaviate/entities/modelsext"
 
 	"github.com/stretchr/testify/require"
 	wvt "github.com/weaviate/weaviate-go-client/v5/weaviate"
@@ -77,6 +79,18 @@ func testMixedVectorsHybrid(host string) func(t *testing.T) {
 			Do(ctx)
 		require.NoError(t, err)
 
+		legacyRespUsingNamedVector, err := client.GraphQL().Get().
+			WithClassName(class.Class).
+			WithHybrid(client.GraphQL().
+				HybridArgumentBuilder().
+				WithQuery("Some text goes here").
+				WithAlpha(0.5).
+				WithTargetVectors(modelsext.DefaultNamedVectorName)).
+			WithFields(field).
+			Do(ctx)
+		require.NoError(t, err)
+
 		require.Equal(t, namedResp, legacyResp)
+		require.Equal(t, legacyRespUsingNamedVector, legacyResp)
 	}
 }

@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -171,7 +171,7 @@ func (h *classPropertyValuesHelper) GetNumber(in interface{}) (float32, error) {
 		}
 		return float32(num), err
 	default:
-		return 0.0, fmt.Errorf("Unrecognized type: %T", in)
+		return 0.0, fmt.Errorf("unrecognized type: %T", in)
 	}
 }
 

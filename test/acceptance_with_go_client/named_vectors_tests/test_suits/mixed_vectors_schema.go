@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -13,12 +13,14 @@ package test_suits
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	wvt "github.com/weaviate/weaviate-go-client/v5/weaviate"
 	"github.com/weaviate/weaviate/entities/models"
+	"github.com/weaviate/weaviate/entities/modelsext"
 	"github.com/weaviate/weaviate/entities/schema"
 )
 
@@ -237,7 +239,7 @@ func testMixedVectorsCreateSchema(host string) func(t *testing.T) {
 			require.NoError(t, client.Schema().ClassCreator().WithClass(class).Do(ctx))
 
 			class.VectorConfig = map[string]models.VectorConfig{
-				"default": {
+				modelsext.DefaultNamedVectorName: {
 					Vectorizer:      map[string]interface{}{text2vecContextionary: map[string]interface{}{}},
 					VectorIndexType: "hnsw",
 				},
@@ -245,7 +247,7 @@ func testMixedVectorsCreateSchema(host string) func(t *testing.T) {
 
 			err = client.Schema().ClassUpdater().WithClass(class).Do(ctx)
 			require.ErrorContains(t, err, "422")
-			require.ErrorContains(t, err, "vector named default cannot be created when collection level vector index is configured")
+			require.ErrorContains(t, err, fmt.Sprintf("vector named %s cannot be created when collection level vector index is configured", modelsext.DefaultNamedVectorName))
 		})
 	}
 }

@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -150,7 +150,7 @@ func (ic *classSettings) getFloatProperty(name string, defaultValue *float64) *f
 			asFloat := float64(asInt)
 			return &asFloat
 		}
-		var wrongVal float64 = -1.0
+		wrongVal := float64(-1.0)
 		return &wrongVal
 	}
 

@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -598,11 +598,12 @@ func compactionRoaringSetStrategy_FrequentPutDeleteOperations(ctx context.Contex
 			t.Run("verify that objects exist before compaction", func(t *testing.T) {
 				res, err := bucket.RoaringSetGet(key)
 				require.NoError(t, err)
-				if size == 5 {
+				switch size {
+				case 5:
 					assert.Equal(t, 0, res.GetCardinality())
-				} else if size == 6 {
+				case 6:
 					assert.Equal(t, 1, res.GetCardinality())
-				} else {
+				default:
 					assert.Equal(t, 2, res.GetCardinality())
 				}
 			})
@@ -618,11 +619,12 @@ func compactionRoaringSetStrategy_FrequentPutDeleteOperations(ctx context.Contex
 			t.Run("verify that objects exist after compaction", func(t *testing.T) {
 				res, err := bucket.RoaringSetGet(key)
 				require.NoError(t, err)
-				if size == 5 {
+				switch size {
+				case 5:
 					assert.Equal(t, 0, res.GetCardinality())
-				} else if size == 6 {
+				case 6:
 					assert.Equal(t, 1, res.GetCardinality())
-				} else {
+				default:
 					assert.Equal(t, 2, res.GetCardinality())
 				}
 			})

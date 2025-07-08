@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -23,7 +23,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/weaviate/weaviate/client/graphql"
-	graphql_client "github.com/weaviate/weaviate/client/graphql"
 	"github.com/weaviate/weaviate/entities/models"
 	"github.com/weaviate/weaviate/test/helper"
 )
@@ -35,7 +34,7 @@ type GraphQLResult struct {
 // Perform a GraphQL request
 func QueryGraphQL(t *testing.T, auth runtime.ClientAuthInfoWriterFunc, operation string, query string, variables map[string]interface{}) (*models.GraphQLResponse, error) {
 	var vars interface{} = variables
-	params := graphql_client.NewGraphqlPostParams().WithBody(&models.GraphQLQuery{OperationName: operation, Query: query, Variables: vars})
+	params := graphql.NewGraphqlPostParams().WithBody(&models.GraphQLQuery{OperationName: operation, Query: query, Variables: vars})
 	response, err := helper.Client(t).Graphql.GraphqlPost(params, nil)
 	if err != nil {
 		return nil, err
@@ -47,7 +46,7 @@ func QueryGraphQL(t *testing.T, auth runtime.ClientAuthInfoWriterFunc, operation
 // Perform a GraphQL request with timeout
 func QueryGraphQLWithTimeout(t *testing.T, auth runtime.ClientAuthInfoWriterFunc, operation string, query string, variables map[string]interface{}, timeout time.Duration) (*models.GraphQLResponse, error) {
 	var vars interface{} = variables
-	params := graphql_client.NewGraphqlPostParamsWithTimeout(timeout).WithBody(&models.GraphQLQuery{OperationName: operation, Query: query, Variables: vars})
+	params := graphql.NewGraphqlPostParamsWithTimeout(timeout).WithBody(&models.GraphQLQuery{OperationName: operation, Query: query, Variables: vars})
 	response, err := helper.Client(t).Graphql.GraphqlPost(params, nil)
 	if err != nil {
 		return nil, err

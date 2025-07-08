@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -13,11 +13,34 @@ package lsmkv
 
 import (
 	"crypto/rand"
+	"fmt"
+	randInsecure "math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func BenchmarkBytes(b *testing.B) {
+	for _, val := range []int{10, 100, 1000, 10000, 24 * 1024} {
+		b.Run(fmt.Sprintf("%d", val), func(b *testing.B) {
+			kv := MapPair{
+				Key:   []byte("my-key-1"),
+				Value: make([]byte, val),
+			}
+			for i := 0; i < len(kv.Value); i++ {
+				kv.Value[i] = byte(randInsecure.Intn(100))
+			}
+			b.ResetTimer()
+			b.ReportAllocs()
+
+			for i := 0; i < b.N; i++ {
+				_, err := kv.Bytes()
+				require.NoError(b, err)
+			}
+		})
+	}
+}
 
 func BenchmarkMapDecoderDoPartial_SingleKey(b *testing.B) {
 	before := []MapPair{{

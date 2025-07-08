@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -16,6 +16,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/weaviate/weaviate/entities/models"
+	"github.com/weaviate/weaviate/entities/modelsext"
 	schemaConfig "github.com/weaviate/weaviate/entities/schema/config"
 	"github.com/weaviate/weaviate/entities/vectorindex/flat"
 	"github.com/weaviate/weaviate/entities/vectorindex/hnsw"
@@ -82,9 +83,17 @@ func TestShared_GetVectorIndexAndQueue(t *testing.T) {
 			legacyIndex, ok := s.GetVectorIndex("")
 			require.Equal(t, tt.wantLegacyExists, ok)
 
+			defaultQueue, ok := s.GetVectorIndex(modelsext.DefaultNamedVectorName)
+			require.Equal(t, tt.wantLegacyExists, ok)
+
+			defaultIndex, ok := s.GetVectorIndex(modelsext.DefaultNamedVectorName)
+			require.Equal(t, tt.wantLegacyExists, ok)
+
 			if tt.wantLegacyExists {
 				require.NotNil(t, legacyQueue)
 				require.NotNil(t, legacyIndex)
+				require.NotNil(t, defaultQueue)
+				require.NotNil(t, defaultIndex)
 			}
 		})
 	}

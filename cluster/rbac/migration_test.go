@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -13,6 +13,8 @@ package rbac
 
 import (
 	"testing"
+
+	"github.com/weaviate/weaviate/usecases/config"
 
 	cmd "github.com/weaviate/weaviate/cluster/proto/api"
 
@@ -337,18 +339,24 @@ func TestMigrateRevokeRoles(t *testing.T) {
 }
 
 func TestMigrateAssignRoles(t *testing.T) {
+	oidc := config.OIDC{
+		Enabled: true,
+	}
+
 	tests := []struct {
 		name           string
 		input          *cmd.AddRolesForUsersRequest
 		expectedOutput []*cmd.AddRolesForUsersRequest
+		authNconfig    config.Authentication
 	}{
 		{
 			name:           "current request",
 			input:          &cmd.AddRolesForUsersRequest{Version: cmd.RBACAssignRevokeCommandPolicyVersionV0 + 1},
 			expectedOutput: []*cmd.AddRolesForUsersRequest{{Version: cmd.RBACAssignRevokeCommandPolicyVersionV0 + 1}},
+			authNconfig:    config.Authentication{OIDC: oidc},
 		},
 		{
-			name: "Request to update",
+			name: "Request to update with OIDC+apikey enabled",
 			input: &cmd.AddRolesForUsersRequest{
 				Version: cmd.RBACAssignRevokeCommandPolicyVersionV0,
 				Roles:   []string{"something"},
@@ -366,12 +374,61 @@ func TestMigrateAssignRoles(t *testing.T) {
 					User:    "oidc:some-user",
 				},
 			},
+			authNconfig: config.Authentication{OIDC: oidc, APIKey: config.StaticAPIKey{Enabled: true, Users: []string{"some-user"}}},
+		},
+		{
+			name: "only oidc",
+			input: &cmd.AddRolesForUsersRequest{
+				Version: cmd.RBACAssignRevokeCommandPolicyVersionV0,
+				Roles:   []string{"something"},
+				User:    "user:some-user",
+			},
+			expectedOutput: []*cmd.AddRolesForUsersRequest{
+				{
+					Version: cmd.RBACAssignRevokeCommandPolicyVersionV0 + 1,
+					Roles:   []string{"something"},
+					User:    "oidc:some-user",
+				},
+			},
+			authNconfig: config.Authentication{OIDC: oidc},
+		},
+		{
+			name: "Request to update with OIDC+apikey enabled, but missing user",
+			input: &cmd.AddRolesForUsersRequest{
+				Version: cmd.RBACAssignRevokeCommandPolicyVersionV0,
+				Roles:   []string{"something"},
+				User:    "user:some-user",
+			},
+			expectedOutput: []*cmd.AddRolesForUsersRequest{
+				{
+					Version: cmd.RBACAssignRevokeCommandPolicyVersionV0 + 1,
+					Roles:   []string{"something"},
+					User:    "oidc:some-user",
+				},
+			},
+			authNconfig: config.Authentication{OIDC: oidc, APIKey: config.StaticAPIKey{Enabled: true, Users: []string{"wrong-user"}}},
+		},
+		{
+			name: "Only apikey enabled",
+			input: &cmd.AddRolesForUsersRequest{
+				Version: cmd.RBACAssignRevokeCommandPolicyVersionV0,
+				Roles:   []string{"something"},
+				User:    "user:some-user",
+			},
+			expectedOutput: []*cmd.AddRolesForUsersRequest{
+				{
+					Version: cmd.RBACAssignRevokeCommandPolicyVersionV0 + 1,
+					Roles:   []string{"something"},
+					User:    "db:some-user",
+				},
+			},
+			authNconfig: config.Authentication{APIKey: config.StaticAPIKey{Enabled: true, Users: []string{"some-user"}}},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			output := migrateAssignRoles(test.input)
+			output := migrateAssignRoles(test.input, test.authNconfig)
 			require.Equal(t, test.expectedOutput, output)
 		})
 	}

@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -20,22 +20,21 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/weaviate/weaviate/adapters/handlers/rest/authz/mocks"
 	"github.com/weaviate/weaviate/adapters/handlers/rest/operations/authz"
 	"github.com/weaviate/weaviate/entities/models"
 	"github.com/weaviate/weaviate/usecases/auth/authorization"
 	"github.com/weaviate/weaviate/usecases/auth/authorization/conv"
-	authZmocks "github.com/weaviate/weaviate/usecases/auth/authorization/mocks"
 )
 
 func TestRemovePermissionsSuccessUpdate(t *testing.T) {
-	authorizer := authZmocks.NewAuthorizer(t)
-	controller := mocks.NewControllerAndGetUsers(t)
+	authorizer := authorization.NewMockAuthorizer(t)
+	controller := NewMockControllerAndGetUsers(t)
 	logger, _ := test.NewNullLogger()
 
 	principal := &models.Principal{Username: "user1"}
 	params := authz.RemovePermissionsParams{
-		ID: "test",
+		ID:          "test",
+		HTTPRequest: req,
 		Body: authz.RemovePermissionsBody{
 			Permissions: []*models.Permission{
 				{
@@ -48,7 +47,7 @@ func TestRemovePermissionsSuccessUpdate(t *testing.T) {
 	policies, err := conv.PermissionToPolicies(params.Body.Permissions...)
 	require.Nil(t, err)
 
-	authorizer.On("Authorize", principal, authorization.VerbWithScope(authorization.UPDATE, authorization.ROLE_SCOPE_ALL), authorization.Roles(params.ID)[0]).Return(nil)
+	authorizer.On("Authorize", mock.Anything, principal, authorization.VerbWithScope(authorization.UPDATE, authorization.ROLE_SCOPE_ALL), authorization.Roles(params.ID)[0]).Return(nil)
 	controller.On("GetRoles", params.ID).Return(map[string][]authorization.Policy{params.ID: {
 		{Resource: "whatever", Verb: authorization.READ, Domain: "whatever"},
 		{Resource: "whatever", Verb: authorization.READ, Domain: "whatever"},
@@ -78,7 +77,8 @@ func TestRemovePermissionsBadRequest(t *testing.T) {
 		{
 			name: "role has to have at least 1 permission",
 			params: authz.RemovePermissionsParams{
-				ID: "someRole",
+				ID:          "someRole",
+				HTTPRequest: req,
 				Body: authz.RemovePermissionsBody{
 					Permissions: []*models.Permission{},
 				},
@@ -104,7 +104,8 @@ func TestRemovePermissionsBadRequest(t *testing.T) {
 		{
 			name: "update builtin role",
 			params: authz.RemovePermissionsParams{
-				ID: authorization.BuiltInRoles[0],
+				ID:          authorization.BuiltInRoles[0],
+				HTTPRequest: req,
 				Body: authz.RemovePermissionsBody{
 					Permissions: []*models.Permission{
 						{
@@ -120,7 +121,7 @@ func TestRemovePermissionsBadRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			controller := mocks.NewControllerAndGetUsers(t)
+			controller := NewMockControllerAndGetUsers(t)
 			logger, _ := test.NewNullLogger()
 
 			h := &authZHandlers{
@@ -151,7 +152,8 @@ func TestRemovePermissionsForbidden(t *testing.T) {
 		{
 			name: "remove permissions",
 			params: authz.RemovePermissionsParams{
-				ID: "someRole",
+				ID:          "someRole",
+				HTTPRequest: req,
 				Body: authz.RemovePermissionsBody{
 					Permissions: []*models.Permission{
 						{
@@ -169,14 +171,14 @@ func TestRemovePermissionsForbidden(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			authorizer := authZmocks.NewAuthorizer(t)
-			controller := mocks.NewControllerAndGetUsers(t)
+			authorizer := authorization.NewMockAuthorizer(t)
+			controller := NewMockControllerAndGetUsers(t)
 			logger, _ := test.NewNullLogger()
 
-			authorizer.On("Authorize", tt.principal, authorization.VerbWithScope(authorization.UPDATE, authorization.ROLE_SCOPE_ALL), authorization.Roles(tt.params.ID)[0]).Return(tt.authorizeErr)
+			authorizer.On("Authorize", mock.Anything, tt.principal, authorization.VerbWithScope(authorization.UPDATE, authorization.ROLE_SCOPE_ALL), authorization.Roles(tt.params.ID)[0]).Return(tt.authorizeErr)
 			if tt.authorizeErr != nil {
 				// 2nd Call if update failed
-				authorizer.On("Authorize", tt.principal, authorization.VerbWithScope(authorization.UPDATE, authorization.ROLE_SCOPE_MATCH), authorization.Roles(tt.params.ID)[0]).Return(tt.authorizeErr)
+				authorizer.On("Authorize", mock.Anything, tt.principal, authorization.VerbWithScope(authorization.UPDATE, authorization.ROLE_SCOPE_MATCH), authorization.Roles(tt.params.ID)[0]).Return(tt.authorizeErr)
 			}
 
 			h := &authZHandlers{
@@ -207,7 +209,8 @@ func TestRemovePermissionsRoleNotFound(t *testing.T) {
 		{
 			name: "role not found",
 			params: authz.RemovePermissionsParams{
-				ID: "some role",
+				ID:          "some role",
+				HTTPRequest: req,
 				Body: authz.RemovePermissionsBody{
 					Permissions: []*models.Permission{
 						{
@@ -226,11 +229,11 @@ func TestRemovePermissionsRoleNotFound(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			authorizer := authZmocks.NewAuthorizer(t)
-			controller := mocks.NewControllerAndGetUsers(t)
+			authorizer := authorization.NewMockAuthorizer(t)
+			controller := NewMockControllerAndGetUsers(t)
 			logger, _ := test.NewNullLogger()
 
-			authorizer.On("Authorize", tt.principal, authorization.VerbWithScope(authorization.UPDATE, authorization.ROLE_SCOPE_ALL), authorization.Roles(tt.params.ID)[0]).Return(nil)
+			authorizer.On("Authorize", mock.Anything, tt.principal, authorization.VerbWithScope(authorization.UPDATE, authorization.ROLE_SCOPE_ALL), authorization.Roles(tt.params.ID)[0]).Return(nil)
 			controller.On("GetRoles", tt.params.ID).Return(map[string][]authorization.Policy{}, nil)
 
 			h := &authZHandlers{
@@ -258,7 +261,8 @@ func TestRemovePermissionsInternalServerError(t *testing.T) {
 		{
 			name: "update some role",
 			params: authz.RemovePermissionsParams{
-				ID: "someRole",
+				ID:          "someRole",
+				HTTPRequest: req,
 				Body: authz.RemovePermissionsBody{
 					Permissions: []*models.Permission{
 						{
@@ -276,11 +280,11 @@ func TestRemovePermissionsInternalServerError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			authorizer := authZmocks.NewAuthorizer(t)
-			controller := mocks.NewControllerAndGetUsers(t)
+			authorizer := authorization.NewMockAuthorizer(t)
+			controller := NewMockControllerAndGetUsers(t)
 			logger, _ := test.NewNullLogger()
 
-			authorizer.On("Authorize", tt.principal, authorization.VerbWithScope(authorization.UPDATE, authorization.ROLE_SCOPE_ALL), authorization.Roles(tt.params.ID)[0]).Return(nil)
+			authorizer.On("Authorize", mock.Anything, tt.principal, authorization.VerbWithScope(authorization.UPDATE, authorization.ROLE_SCOPE_ALL), authorization.Roles(tt.params.ID)[0]).Return(nil)
 			controller.On("GetRoles", tt.params.ID).Return(map[string][]authorization.Policy{tt.params.ID: {
 				{Resource: "whatever", Verb: authorization.READ, Domain: "whatever"},
 				{Resource: "whatever", Verb: authorization.READ, Domain: "whatever"},

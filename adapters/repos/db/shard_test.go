@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -758,7 +758,7 @@ func TestShard_UpgradeIndex(t *testing.T) {
 	t.Setenv("QUEUE_SCHEDULER_INTERVAL", "1ms")
 
 	cfg := dynamic.NewDefaultUserConfig()
-	cfg.Threshold = 1000
+	cfg.Threshold = 400
 
 	ctx := context.Background()
 	className := "SomeClass"
@@ -776,7 +776,7 @@ func TestShard_UpgradeIndex(t *testing.T) {
 		}
 	}(shd.Index().Config.RootPath)
 
-	amount := 1000
+	amount := 400
 	for i := 0; i < 3; i++ {
 		objs := make([]*storobj.Object, 0, amount)
 		for j := 0; j < amount; j++ {

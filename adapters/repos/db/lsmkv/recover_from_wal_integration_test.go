@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -37,7 +37,7 @@ func TestReplaceStrategy_RecoverFromWAL(t *testing.T) {
 	t.Run("with some previous state", func(t *testing.T) {
 		b, err := NewBucketCreator().NewBucket(testCtx(), dirNameOriginal, "", nullLogger(), nil,
 			cyclemanager.NewCallbackGroupNoop(), cyclemanager.NewCallbackGroupNoop(),
-			WithStrategy(StrategyReplace))
+			WithStrategy(StrategyReplace), WithMinWalThreshold(0))
 		require.Nil(t, err)
 
 		// so big it effectively never triggers as part of this test
@@ -72,7 +72,7 @@ func TestReplaceStrategy_RecoverFromWAL(t *testing.T) {
 			var err error
 			b, err = NewBucketCreator().NewBucket(testCtx(), dirNameOriginal, "", nullLogger(), nil,
 				cyclemanager.NewCallbackGroupNoop(), cyclemanager.NewCallbackGroupNoop(),
-				WithStrategy(StrategyReplace))
+				WithStrategy(StrategyReplace), WithMinWalThreshold(0))
 			require.Nil(t, err)
 		})
 
@@ -158,7 +158,7 @@ func TestReplaceStrategy_RecoverFromWAL(t *testing.T) {
 		t.Run("create new bucket from existing state", func(t *testing.T) {
 			b, err := NewBucketCreator().NewBucket(testCtx(), dirNameRecovered, "", nullLogger(), nil,
 				cyclemanager.NewCallbackGroupNoop(), cyclemanager.NewCallbackGroupNoop(),
-				WithStrategy(StrategyReplace))
+				WithStrategy(StrategyReplace), WithMinWalThreshold(0))
 			require.Nil(t, err)
 
 			// so big it effectively never triggers as part of this test
@@ -645,16 +645,19 @@ func TestRoaringSetRangeStrategy_RecoverFromWAL(t *testing.T) {
 			reader := b.ReaderRoaringSetRange()
 			defer reader.Close()
 
-			bm1, err := reader.Read(testCtx(), key1, filters.OperatorEqual)
+			bm1, release1, err := reader.Read(testCtx(), key1, filters.OperatorEqual)
 			require.NoError(t, err)
+			defer release1()
 			assert.ElementsMatch(t, orig1, bm1.ToArray())
 
-			bm2, err := reader.Read(testCtx(), key2, filters.OperatorEqual)
+			bm2, release2, err := reader.Read(testCtx(), key2, filters.OperatorEqual)
 			require.NoError(t, err)
+			defer release2()
 			assert.ElementsMatch(t, orig2, bm2.ToArray())
 
-			bm3, err := reader.Read(testCtx(), key3, filters.OperatorEqual)
+			bm3, release3, err := reader.Read(testCtx(), key3, filters.OperatorEqual)
 			require.NoError(t, err)
+			defer release3()
 			assert.ElementsMatch(t, orig3, bm3.ToArray())
 		})
 
@@ -693,16 +696,19 @@ func TestRoaringSetRangeStrategy_RecoverFromWAL(t *testing.T) {
 			reader := b.ReaderRoaringSetRange()
 			defer reader.Close()
 
-			bm1, err := reader.Read(testCtx(), key1, filters.OperatorEqual)
+			bm1, release1, err := reader.Read(testCtx(), key1, filters.OperatorEqual)
 			require.NoError(t, err)
+			defer release1()
 			assert.ElementsMatch(t, expected1, bm1.ToArray())
 
-			bm2, err := reader.Read(testCtx(), key2, filters.OperatorEqual)
+			bm2, release2, err := reader.Read(testCtx(), key2, filters.OperatorEqual)
 			require.NoError(t, err)
+			defer release2()
 			assert.ElementsMatch(t, expected2, bm2.ToArray())
 
-			bm3, err := reader.Read(testCtx(), key3, filters.OperatorEqual)
+			bm3, release3, err := reader.Read(testCtx(), key3, filters.OperatorEqual)
 			require.NoError(t, err)
+			defer release3()
 			assert.ElementsMatch(t, expected3, bm3.ToArray())
 		})
 
@@ -750,16 +756,19 @@ func TestRoaringSetRangeStrategy_RecoverFromWAL(t *testing.T) {
 			reader := bRec.ReaderRoaringSetRange()
 			defer reader.Close()
 
-			bm1, err := reader.Read(testCtx(), key1, filters.OperatorEqual)
+			bm1, release1, err := reader.Read(testCtx(), key1, filters.OperatorEqual)
 			require.NoError(t, err)
+			defer release1()
 			assert.ElementsMatch(t, expected1, bm1.ToArray())
 
-			bm2, err := reader.Read(testCtx(), key2, filters.OperatorEqual)
+			bm2, release2, err := reader.Read(testCtx(), key2, filters.OperatorEqual)
 			require.NoError(t, err)
+			defer release2()
 			assert.ElementsMatch(t, expected2, bm2.ToArray())
 
-			bm3, err := reader.Read(testCtx(), key3, filters.OperatorEqual)
+			bm3, release3, err := reader.Read(testCtx(), key3, filters.OperatorEqual)
 			require.NoError(t, err)
+			defer release3()
 			assert.ElementsMatch(t, expected3, bm3.ToArray())
 		})
 	})

@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -880,8 +880,26 @@ func (w *chunkWriter) Open() error {
 	var count uint64
 	for {
 		// read the record length
-		_, err := io.ReadFull(r, w.buf[:4])
+		n, err := io.ReadFull(r, w.buf[:4])
 		if errors.Is(err, io.EOF) {
+			break
+		}
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			// a record was not fully written, probably because of a crash.
+			w.logger.WithField("action", "queue_log_corruption").
+				WithField("path", filepath.Join(w.dir, lastChunk)).
+				Error(errors.Wrap(err, "queue ended abruptly, some elements may not have been recovered"))
+
+			// truncate the file to the last complete record
+			err = w.f.Truncate(int64(w.size) - int64(n))
+			if err != nil {
+				return errors.Wrap(err, "failed to truncate chunk file")
+			}
+			err = w.f.Sync()
+			if err != nil {
+				return errors.Wrap(err, "failed to sync chunk file")
+			}
+			w.size -= uint64(n)
 			break
 		}
 		if err != nil {
@@ -893,8 +911,27 @@ func (w *chunkWriter) Open() error {
 		}
 
 		// skip the record
-		_, err = r.Discard(int(length))
+		n, err = r.Discard(int(length))
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				// a record was not fully written, probably because of a crash.
+				w.logger.WithField("action", "queue_log_corruption").
+					WithField("path", filepath.Join(w.dir, lastChunk)).
+					Error(errors.Wrap(err, "queue ended abruptly, some elements may not have been recovered"))
+
+				// truncate the file to the last complete record
+				err = w.f.Truncate(int64(w.size) - 4 - int64(n))
+				if err != nil {
+					return errors.Wrap(err, "failed to truncate chunk file")
+				}
+				err = w.f.Sync()
+				if err != nil {
+					return errors.Wrap(err, "failed to sync chunk file")
+				}
+				w.size -= 4 + uint64(n)
+				break
+			}
+
 			return errors.Wrap(err, "failed to skip record")
 		}
 

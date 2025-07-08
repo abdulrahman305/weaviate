@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -192,7 +192,11 @@ func (s *s3Client) PutObject(ctx context.Context, backupID, key, overrideBucket,
 	}
 
 	remotePath := s.makeObjectName(backupID, key)
-	opt := minio.PutObjectOptions{ContentType: "application/octet-stream", PartSize: MINIO_MIN_PART_SIZE}
+	opt := minio.PutObjectOptions{
+		ContentType:    "application/octet-stream",
+		PartSize:       MINIO_MIN_PART_SIZE,
+		SendContentMd5: true,
+	}
 	reader := bytes.NewReader(byes)
 	objectSize := int64(len(byes))
 
@@ -280,6 +284,7 @@ func (s *s3Client) Write(ctx context.Context, backupID, key, overrideBucket, ove
 		ContentType:      "application/octet-stream",
 		DisableMultipart: false,
 		PartSize:         MINIO_MIN_PART_SIZE,
+		SendContentMd5:   true,
 	}
 
 	if overridePath != "" {

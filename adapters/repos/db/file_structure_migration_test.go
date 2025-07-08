@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -225,10 +225,10 @@ func randShardName() string {
 func randStringBytes(n int) string {
 	b := make([]byte, n)
 	for i := range b {
-		switch {
-		case i == 0:
+		switch i {
+		case 0:
 			b[i] = randChar(uppercase)
-		case i == n/2:
+		case n / 2:
 			b[i] = []byte("_")[0]
 		default:
 			b[i] = randChar(chars)
@@ -271,6 +271,10 @@ func (sg *fakeMigrationSchemaGetter) GetSchemaSkipAuth() schema.Schema {
 
 func (sg *fakeMigrationSchemaGetter) ReadOnlyClass(class string) *models.Class {
 	return sg.sch.GetClass(class)
+}
+
+func (sg *fakeMigrationSchemaGetter) ResolveAlias(string) string {
+	return ""
 }
 
 func (sg *fakeMigrationSchemaGetter) Nodes() []string {

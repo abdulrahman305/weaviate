@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -17,15 +17,18 @@ import (
 	"testing"
 
 	"github.com/go-openapi/strfmt"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
 	"github.com/weaviate/weaviate/entities/models"
 	"github.com/weaviate/weaviate/entities/schema"
 	"github.com/weaviate/weaviate/entities/vectorindex/hnsw"
 	"github.com/weaviate/weaviate/usecases/auth/authorization/mocks"
 	"github.com/weaviate/weaviate/usecases/config"
+	"github.com/weaviate/weaviate/usecases/config/runtime"
 )
 
 func Test_BatchManager_AddObjects_WithNoVectorizerModule(t *testing.T) {
@@ -35,7 +38,7 @@ func Test_BatchManager_AddObjects_WithNoVectorizerModule(t *testing.T) {
 		manager         *BatchManager
 	)
 
-	sch := schema.Schema{
+	schema := schema.Schema{
 		Objects: &models.Schema{
 			Classes: []*models.Class{
 				{
@@ -59,18 +62,19 @@ func Test_BatchManager_AddObjects_WithNoVectorizerModule(t *testing.T) {
 		config := &config.WeaviateConfig{
 			Config: config.Config{
 				AutoSchema: config.AutoSchema{
-					Enabled: autoSchema,
+					Enabled: runtime.NewDynamicValue(autoSchema),
 				},
 				TrackVectorDimensions: true,
 			},
 		}
 		schemaManager := &fakeSchemaManager{
-			GetSchemaResponse: sch,
+			GetSchemaResponse: schema,
 		}
 		logger, _ := test.NewNullLogger()
 		authorizer := mocks.NewMockAuthorizer()
 		modulesProvider = getFakeModulesProvider()
-		manager = NewBatchManager(vectorRepo, modulesProvider, schemaManager, config, logger, authorizer, nil)
+		manager = NewBatchManager(vectorRepo, modulesProvider, schemaManager, config, logger, authorizer, nil,
+			NewAutoSchemaManager(schemaManager, vectorRepo, config, authorizer, logger, prometheus.NewPedanticRegistry()))
 	}
 
 	reset := func() {
@@ -184,9 +188,9 @@ func Test_BatchManager_AddObjects_WithNoVectorizerModule(t *testing.T) {
 			"a uuid was set for the second object")
 		assert.Nil(t, repoCalledWithObjects[0].Err)
 		assert.Nil(t, repoCalledWithObjects[1].Err)
-		assert.Equal(t, []float32{0.1, 0.1, 0.1111}, repoCalledWithObjects[0].Object.Vectors[schema.DefaultNamedVectorName],
+		assert.Equal(t, models.C11yVector{0.1, 0.1, 0.1111}, repoCalledWithObjects[0].Object.Vector,
 			"the correct vector was used")
-		assert.Equal(t, []float32{0.2, 0.2, 0.2222}, repoCalledWithObjects[1].Object.Vectors[schema.DefaultNamedVectorName],
+		assert.Equal(t, models.C11yVector{0.2, 0.2, 0.2222}, repoCalledWithObjects[1].Object.Vector,
 			"the correct vector was used")
 	})
 
@@ -322,7 +326,8 @@ func Test_BatchManager_AddObjects_WithExternalVectorizerModule(t *testing.T) {
 		logger, _ := test.NewNullLogger()
 		authorizer := mocks.NewMockAuthorizer()
 		modulesProvider = getFakeModulesProvider()
-		manager = NewBatchManager(vectorRepo, modulesProvider, schemaManager, config, logger, authorizer, nil)
+		manager = NewBatchManager(vectorRepo, modulesProvider, schemaManager, config, logger, authorizer, nil,
+			NewAutoSchemaManager(schemaManager, vectorRepo, config, authorizer, logger, prometheus.NewPedanticRegistry()))
 	}
 
 	ctx := context.Background()
@@ -465,7 +470,8 @@ func Test_BatchManager_AddObjectsEmptyProperties(t *testing.T) {
 		logger, _ := test.NewNullLogger()
 		authorizer := mocks.NewMockAuthorizer()
 		modulesProvider = getFakeModulesProvider()
-		manager = NewBatchManager(vectorRepo, modulesProvider, schemaManager, config, logger, authorizer, nil)
+		manager = NewBatchManager(vectorRepo, modulesProvider, schemaManager, config, logger, authorizer, nil,
+			NewAutoSchemaManager(schemaManager, vectorRepo, config, authorizer, logger, prometheus.NewPedanticRegistry()))
 	}
 	reset()
 	objects := []*models.Object{

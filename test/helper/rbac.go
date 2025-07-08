@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -14,6 +14,9 @@ package helper
 import (
 	"errors"
 	"testing"
+	"time"
+
+	"github.com/go-openapi/strfmt"
 
 	"github.com/stretchr/testify/require"
 
@@ -80,6 +83,7 @@ func GetUserForRolesBoth(t *testing.T, roleName, key string) []*authz.GetUsersFo
 }
 
 func GetInfoForOwnUser(t *testing.T, key string) *models.UserOwnInfo {
+	t.Helper()
 	resp, err := Client(t).Users.GetOwnInfo(users.NewGetOwnInfoParams(), CreateAuth(key))
 	AssertRequestOk(t, resp, err, nil)
 	require.Nil(t, err)
@@ -107,9 +111,34 @@ func GetUser(t *testing.T, userId, key string) *models.DBUserInfo {
 	return resp.Payload
 }
 
+func GetUserWithLastUsedTime(t *testing.T, userId, key string, lastUsedTime bool) *models.DBUserInfo {
+	t.Helper()
+	resp, err := Client(t).Users.GetUserInfo(users.NewGetUserInfoParams().WithUserID(userId).WithIncludeLastUsedTime(&lastUsedTime), CreateAuth(key))
+	AssertRequestOk(t, resp, err, nil)
+	require.Nil(t, err)
+	require.NotNil(t, resp.Payload)
+	return resp.Payload
+}
+
 func CreateUser(t *testing.T, userId, key string) string {
 	t.Helper()
 	resp, err := Client(t).Users.CreateUser(users.NewCreateUserParams().WithUserID(userId), CreateAuth(key))
+	AssertRequestOk(t, resp, err, nil)
+	require.Nil(t, err)
+	require.NotNil(t, resp)
+	require.NotNil(t, resp.Payload)
+	require.NotNil(t, resp.Payload.Apikey)
+	return *resp.Payload.Apikey
+}
+
+func CreateUserWithApiKey(t *testing.T, userId, key string, createdAt *time.Time) string {
+	t.Helper()
+	tp := true
+	if createdAt == nil {
+		createdAt = &time.Time{}
+	}
+
+	resp, err := Client(t).Users.CreateUser(users.NewCreateUserParams().WithUserID(userId).WithBody(users.CreateUserBody{Import: &tp, CreateTime: strfmt.DateTime(*createdAt)}), CreateAuth(key))
 	AssertRequestOk(t, resp, err, nil)
 	require.Nil(t, err)
 	require.NotNil(t, resp)
@@ -146,6 +175,14 @@ func ActivateUser(t *testing.T, key, userId string) {
 func ListAllUsers(t *testing.T, key string) []*models.DBUserInfo {
 	t.Helper()
 	resp, err := Client(t).Users.ListAllUsers(users.NewListAllUsersParams(), CreateAuth(key))
+	AssertRequestOk(t, resp, err, nil)
+	require.Nil(t, err)
+	return resp.Payload
+}
+
+func ListAllUsersWithIncludeTime(t *testing.T, key string, includeLastUsedTime bool) []*models.DBUserInfo {
+	t.Helper()
+	resp, err := Client(t).Users.ListAllUsers(users.NewListAllUsersParams().WithIncludeLastUsedTime(&includeLastUsedTime), CreateAuth(key))
 	AssertRequestOk(t, resp, err, nil)
 	require.Nil(t, err)
 	return resp.Payload
@@ -221,6 +258,17 @@ func RevokeRoleFromGroup(t *testing.T, key, role, group string) {
 func AddPermissions(t *testing.T, key, role string, permissions ...*models.Permission) {
 	resp, err := Client(t).Authz.AddPermissions(
 		authz.NewAddPermissionsParams().WithID(role).WithBody(authz.AddPermissionsBody{
+			Permissions: permissions,
+		}),
+		CreateAuth(key),
+	)
+	AssertRequestOk(t, resp, err, nil)
+	require.Nil(t, err)
+}
+
+func RemovePermissions(t *testing.T, key, role string, permissions ...*models.Permission) {
+	resp, err := Client(t).Authz.RemovePermissions(
+		authz.NewRemovePermissionsParams().WithID(role).WithBody(authz.RemovePermissionsBody{
 			Permissions: permissions,
 		}),
 		CreateAuth(key),

@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -16,7 +16,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/weaviate/weaviate/entities/models"
-	schemachecks "github.com/weaviate/weaviate/entities/schema/checks"
+	"github.com/weaviate/weaviate/entities/modelsext"
 )
 
 type VectorIndexConfig interface {
@@ -26,7 +26,7 @@ type VectorIndexConfig interface {
 }
 
 func TypeAssertVectorIndex(class *models.Class, targetVectors []string) ([]VectorIndexConfig, error) {
-	if len(class.VectorConfig) == 0 || (schemachecks.HasLegacyVectorIndex(class) && len(targetVectors) == 0) {
+	if len(class.VectorConfig) == 0 || (modelsext.ClassHasLegacyVectorIndex(class) && len(targetVectors) == 0) {
 		vectorIndexConfig, ok := class.VectorIndexConfig.(VectorIndexConfig)
 		if !ok {
 			return nil, fmt.Errorf("class '%s' vector index: config is not schema.VectorIndexConfig: %T",
@@ -55,7 +55,7 @@ func TypeAssertVectorIndex(class *models.Class, targetVectors []string) ([]Vecto
 
 	configs := make([]VectorIndexConfig, 0, len(targetVectors))
 	for _, targetVector := range targetVectors {
-		vectorConfig, ok := class.VectorConfig[targetVector]
+		vectorConfig, ok := modelsext.ClassGetVectorConfig(class, targetVector)
 		if !ok {
 			return nil, errors.Errorf("vector config not found for target vector: %s", targetVector)
 		}

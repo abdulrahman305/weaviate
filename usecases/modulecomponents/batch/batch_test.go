@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -17,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/weaviate/tiktoken-go"
 
 	"github.com/weaviate/weaviate/usecases/modulecomponents"
 
@@ -89,7 +91,7 @@ func TestBatch(t *testing.T) {
 			{Class: "Car", Properties: map[string]interface{}{"test": "next batch, will be aborted due to context deadline"}},
 			{Class: "Car", Properties: map[string]interface{}{"test": "skipped"}},
 			{Class: "Car", Properties: map[string]interface{}{"test": "has error again"}},
-		}, skip: []bool{false, false, false, false, true, false}, wantErrors: map[int]error{3: fmt.Errorf("context deadline exceeded or cancelled"), 5: fmt.Errorf("context deadline exceeded or cancelled")}},
+		}, skip: []bool{false, false, false, false, true, false}, wantErrors: map[int]error{3: fmt.Errorf("context deadline exceeded"), 5: fmt.Errorf("context deadline exceeded")}},
 		{name: "request error", objects: []*models.Object{
 			{Class: "Car", Properties: map[string]interface{}{"test": "ReqError something"}},
 		}, skip: []bool{false}, wantErrors: map[int]error{0: fmt.Errorf("something")}},
@@ -357,4 +359,27 @@ func TestBatchRequestMissingRLValues(t *testing.T) {
 	require.Len(t, errs, 0)
 	// refresh rate is 1s. If the missing values would have any effect the batch algo would wait for the refresh to happen
 	require.Less(t, time.Since(start), time.Millisecond*900)
+}
+
+func TestEncoderCache(t *testing.T) {
+	cache := NewEncoderCache()
+
+	modelString := "text-embedding-ada-002"
+	wg := sync.WaitGroup{}
+	for i := 0; i < 10; i++ {
+		wg.Add(2)
+		go func() {
+			tke, err := tiktoken.EncodingForModel(modelString)
+			require.NoError(t, err)
+			cache.Set(modelString, tke)
+			wg.Done()
+		}()
+
+		go func() {
+			cache.Get(modelString)
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
 }

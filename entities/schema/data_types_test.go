@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -207,7 +207,7 @@ func TestGetPropertyDataType(t *testing.T) {
 		{
 			propName:         "invalidProp",
 			expectedDataType: nil,
-			expectedErr:      fmt.Errorf("given value-DataType does not exist."),
+			expectedErr:      fmt.Errorf("given value-DataType does not exist"),
 		},
 	}
 

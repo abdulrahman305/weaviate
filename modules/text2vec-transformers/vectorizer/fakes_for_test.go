@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -15,20 +15,20 @@ import (
 	"context"
 
 	"github.com/weaviate/weaviate/entities/schema"
-	"github.com/weaviate/weaviate/modules/text2vec-transformers/ent"
+	"github.com/weaviate/weaviate/usecases/modulecomponents/clients/transformers"
 )
 
 type fakeClient struct {
 	lastInput  string
-	lastConfig ent.VectorizationConfig
+	lastConfig transformers.VectorizationConfig
 }
 
 func (c *fakeClient) VectorizeObject(ctx context.Context,
-	text string, cfg ent.VectorizationConfig,
-) (*ent.VectorizationResult, error) {
+	text string, cfg transformers.VectorizationConfig,
+) (*transformers.VectorizationResult, error) {
 	c.lastInput = text
 	c.lastConfig = cfg
-	return &ent.VectorizationResult{
+	return &transformers.VectorizationResult{
 		Vector:     []float32{0, 1, 2, 3},
 		Dimensions: 4,
 		Text:       text,
@@ -36,8 +36,8 @@ func (c *fakeClient) VectorizeObject(ctx context.Context,
 }
 
 func (c *fakeClient) VectorizeQuery(ctx context.Context,
-	text string, cfg ent.VectorizationConfig,
-) (*ent.VectorizationResult, error) {
+	text string, cfg transformers.VectorizationConfig,
+) (*transformers.VectorizationResult, error) {
 	return c.VectorizeObject(ctx, text, cfg)
 }
 

@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -24,7 +24,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaviate/weaviate/modules/text2vec-transformers/ent"
+	"github.com/weaviate/weaviate/usecases/modulecomponents/clients/transformers"
 )
 
 func TestClient(t *testing.T) {
@@ -32,13 +32,13 @@ func TestClient(t *testing.T) {
 		server := httptest.NewServer(&fakeHandler{t: t})
 		defer server.Close()
 		c := New(server.URL, server.URL, 0, nullLogger())
-		expected := &ent.VectorizationResult{
+		expected := &transformers.VectorizationResult{
 			Text:       "This is my text",
 			Vector:     []float32{0.1, 0.2, 0.3},
 			Dimensions: 3,
 		}
 		res, err := c.VectorizeObject(context.Background(), "This is my text",
-			ent.VectorizationConfig{
+			transformers.VectorizationConfig{
 				PoolingStrategy: "masked_mean",
 			})
 
@@ -53,7 +53,7 @@ func TestClient(t *testing.T) {
 		ctx, cancel := context.WithDeadline(context.Background(), time.Now())
 		defer cancel()
 
-		_, err := c.VectorizeObject(ctx, "This is my text", ent.VectorizationConfig{})
+		_, err := c.VectorizeObject(ctx, "This is my text", transformers.VectorizationConfig{})
 
 		require.NotNil(t, err)
 		assert.Contains(t, err.Error(), "context deadline exceeded")
@@ -67,7 +67,7 @@ func TestClient(t *testing.T) {
 		defer server.Close()
 		c := New(server.URL, server.URL, 0, nullLogger())
 		_, err := c.VectorizeObject(context.Background(), "This is my text",
-			ent.VectorizationConfig{})
+			transformers.VectorizationConfig{})
 
 		require.NotNil(t, err)
 		assert.Contains(t, err.Error(), "nope, not gonna happen")

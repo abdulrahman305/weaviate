@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -20,11 +20,9 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus/hooks/test"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/weaviate/weaviate/adapters/repos/db/vector/hnsw/distancer"
 	"github.com/weaviate/weaviate/entities/vectorindex/hnsw"
-	ent "github.com/weaviate/weaviate/entities/vectorindex/hnsw"
 )
 
 func getRandomSeed() *rand.Rand {
@@ -62,11 +60,11 @@ func Test_NoRacePQInvalidConfig(t *testing.T) {
 		vectors, _ := RandomVecs(vectors_size, vectors_size, amount)
 		distanceProvider := distancer.NewL2SquaredProvider()
 
-		cfg := ent.PQConfig{
+		cfg := hnsw.PQConfig{
 			Enabled: true,
-			Encoder: ent.PQEncoder{
+			Encoder: hnsw.PQEncoder{
 				Type:         hnsw.PQEncoderTypeKMeans,
-				Distribution: ent.PQEncoderDistributionLogNormal,
+				Distribution: hnsw.PQEncoderDistributionLogNormal,
 			},
 			Centroids:     centroids,
 			TrainingLimit: 260,

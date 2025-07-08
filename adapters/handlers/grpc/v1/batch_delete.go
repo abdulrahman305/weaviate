@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -38,7 +38,7 @@ func batchDeleteParamsFromProto(req *pb.BatchDeleteRequest, authorizedGetClass c
 		return objects.BatchDeleteParams{}, fmt.Errorf("could not find class %s in schema", req.Collection)
 	}
 
-	params.ClassName = schema.ClassName(req.Collection)
+	params.ClassName = schema.ClassName(class.Class)
 
 	if req.Verbose {
 		params.Output = "verbose"
@@ -79,7 +79,7 @@ func batchDeleteReplyFromObjects(response objects.BatchDeleteResult, verbose boo
 			failed += 1
 		}
 		if verbose {
-			hexInteger, success := new(big.Int).SetString(strings.Replace(obj.UUID.String(), "-", "", -1), 16)
+			hexInteger, success := new(big.Int).SetString(strings.ReplaceAll(obj.UUID.String(), "-", ""), 16)
 			if !success {
 				return nil, fmt.Errorf("failed to parse hex string to integer")
 			}

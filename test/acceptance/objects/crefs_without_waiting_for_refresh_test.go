@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -20,7 +20,6 @@ import (
 	"github.com/weaviate/weaviate/entities/models"
 	"github.com/weaviate/weaviate/entities/schema"
 	"github.com/weaviate/weaviate/test/helper"
-	testhelper "github.com/weaviate/weaviate/test/helper"
 )
 
 // See https://github.com/weaviate/weaviate/issues/980
@@ -92,7 +91,7 @@ func Test_AddingReferenceWithoutWaiting_UsingPostObjects(t *testing.T) {
 		return city.Properties
 	}
 	t.Log("7. verify first cross ref was added")
-	testhelper.AssertEventuallyEqual(t, map[string]interface{}{
+	helper.AssertEventuallyEqual(t, map[string]interface{}{
 		"name": "My City",
 		"hasPlace": []interface{}{
 			map[string]interface{}{

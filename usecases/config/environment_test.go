@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -12,14 +12,15 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"github.com/weaviate/weaviate/usecases/cluster"
+	"github.com/weaviate/weaviate/usecases/config/runtime"
 )
 
 const DefaultGoroutineFactor = 1.5
@@ -303,21 +304,17 @@ func TestEnvironmentParseClusterConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid cluster config - both ports provided",
+			name: "valid cluster config - both ports provided",
 			envVars: map[string]string{
 				"CLUSTER_GOSSIP_BIND_PORT": "7100",
 				"CLUSTER_DATA_BIND_PORT":   "7111",
 			},
-			expectedErr: errors.New("CLUSTER_DATA_BIND_PORT must be one port " +
-				"number greater than CLUSTER_GOSSIP_BIND_PORT"),
-		},
-		{
-			name: "invalid config - only data bind port provided",
-			envVars: map[string]string{
-				"CLUSTER_DATA_BIND_PORT": "7101",
+			expectedResult: cluster.Config{
+				Hostname:         hostname,
+				GossipBindPort:   7100,
+				DataBindPort:     7111,
+				MaintenanceNodes: make([]string, 0),
 			},
-			expectedErr: errors.New("CLUSTER_DATA_BIND_PORT must be one port " +
-				"number greater than CLUSTER_GOSSIP_BIND_PORT"),
 		},
 		{
 			name: "schema sync disabled",
@@ -722,7 +719,14 @@ func TestEnvironmentAuthentication(t *testing.T) {
 			auth_env_var: []string{"AUTHENTICATION_OIDC_ENABLED"},
 			expected: Authentication{
 				OIDC: OIDC{
-					Enabled: true,
+					Enabled:           true,
+					Issuer:            runtime.NewDynamicValue(""),
+					ClientID:          runtime.NewDynamicValue(""),
+					SkipClientIDCheck: runtime.NewDynamicValue(false),
+					UsernameClaim:     runtime.NewDynamicValue(""),
+					GroupsClaim:       runtime.NewDynamicValue(""),
+					Scopes:            runtime.NewDynamicValue([]string(nil)),
+					Certificate:       runtime.NewDynamicValue(""),
 				},
 			},
 		},
@@ -925,6 +929,364 @@ func TestEnabledForHost(t *testing.T) {
 		t.Run(fmt.Sprintf("disabled %q", val), func(t *testing.T) {
 			t.Setenv(envName, val)
 			assert.False(t, enabledForHost(envName, localHostname))
+		})
+	}
+}
+
+func TestParseCollectionPropsTenants(t *testing.T) {
+	type testCase struct {
+		env            string
+		expected       []CollectionPropsTenants
+		expectedErrMsg string
+	}
+
+	p := newCollectionPropsTenantsParser()
+
+	testCases := []testCase{
+		{
+			env:      "",
+			expected: []CollectionPropsTenants{},
+		},
+
+		// collections
+		{
+			env: "Collection1",
+			expected: []CollectionPropsTenants{
+				{Collection: "Collection1"},
+			},
+		},
+		{
+			env: "Collection1; Collection2; ;",
+			expected: []CollectionPropsTenants{
+				{Collection: "Collection1"},
+				{Collection: "Collection2"},
+			},
+		},
+		{
+			env: "Collection1:; Collection2::; ;",
+			expected: []CollectionPropsTenants{
+				{Collection: "Collection1"},
+				{Collection: "Collection2"},
+			},
+		},
+
+		// collections + props
+		{
+			env: "Collection1:prop1,prop2",
+			expected: []CollectionPropsTenants{
+				{
+					Collection: "Collection1",
+					Props:      []string{"prop1", "prop2"},
+				},
+			},
+		},
+		{
+			env: "Collection1:prop1, prop2;Collection2:prop3: ;",
+			expected: []CollectionPropsTenants{
+				{
+					Collection: "Collection1",
+					Props:      []string{"prop1", "prop2"},
+				},
+				{
+					Collection: "Collection2",
+					Props:      []string{"prop3"},
+				},
+			},
+		},
+
+		// collections + tenants
+		{
+			env: "Collection1::tenant1,tenant2",
+			expected: []CollectionPropsTenants{
+				{
+					Collection: "Collection1",
+					Tenants:    []string{"tenant1", "tenant2"},
+				},
+			},
+		},
+		{
+			env: "Collection1::tenant1, tenant2;Collection2::tenant3",
+			expected: []CollectionPropsTenants{
+				{
+					Collection: "Collection1",
+					Tenants:    []string{"tenant1", "tenant2"},
+				},
+				{
+					Collection: "Collection2",
+					Tenants:    []string{"tenant3"},
+				},
+			},
+		},
+
+		// collections + props + tenants
+		{
+			env: "Collection1:prop1:tenant1,tenant2",
+			expected: []CollectionPropsTenants{
+				{
+					Collection: "Collection1",
+					Props:      []string{"prop1"},
+					Tenants:    []string{"tenant1", "tenant2"},
+				},
+			},
+		},
+		{
+			env: "Collection1:prop1 :tenant1, tenant2;Collection2:prop2,prop3 :tenant3 ; ",
+			expected: []CollectionPropsTenants{
+				{
+					Collection: "Collection1",
+					Props:      []string{"prop1"},
+					Tenants:    []string{"tenant1", "tenant2"},
+				},
+				{
+					Collection: "Collection2",
+					Props:      []string{"prop2", "prop3"},
+					Tenants:    []string{"tenant3"},
+				},
+			},
+		},
+
+		// unique / merged
+		{
+			env: "Collection1:prop1,prop2:tenant1,tenant2;Collection2:propX;Collection1:prop2,prop3;Collection3::tenantY;Collection1:prop4:tenant2,tenant3",
+			expected: []CollectionPropsTenants{
+				{
+					Collection: "Collection1",
+					Props:      []string{"prop1", "prop2", "prop3", "prop4"},
+					Tenants:    []string{"tenant1", "tenant2", "tenant3"},
+				},
+				{
+					Collection: "Collection2",
+					Props:      []string{"propX"},
+				},
+				{
+					Collection: "Collection3",
+					Tenants:    []string{"tenantY"},
+				},
+			},
+		},
+
+		// errors
+		{
+			env:            "lowerCaseCollectionName",
+			expectedErrMsg: "invalid collection name",
+		},
+		{
+			env:            "InvalidChars#",
+			expectedErrMsg: "invalid collection name",
+		},
+		{
+			env:            "Collection1:InvalidChars#",
+			expectedErrMsg: "invalid property name",
+		},
+		{
+			env:            "Collection1::InvalidChars#",
+			expectedErrMsg: "invalid tenant/shard name",
+		},
+		{
+			env:            ":prop",
+			expectedErrMsg: "missing collection name",
+		},
+		{
+			env:            "::tenant",
+			expectedErrMsg: "missing collection name",
+		},
+		{
+			env:            ":prop:tenant",
+			expectedErrMsg: "missing collection name",
+		},
+		{
+			env:            "Collection1:::",
+			expectedErrMsg: "too many parts",
+		},
+		{
+			env:            "Collection1:prop:tenant:",
+			expectedErrMsg: "too many parts",
+		},
+		{
+			env:            "Collection1:prop:tenant:something",
+			expectedErrMsg: "too many parts",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.env, func(t *testing.T) {
+			cpts, err := p.parse(tc.env)
+
+			if tc.expectedErrMsg != "" {
+				assert.ErrorContains(t, err, tc.expectedErrMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			assert.ElementsMatch(t, tc.expected, cpts)
+		})
+	}
+}
+
+func TestEnvironmentPersistenceMinMMapSize(t *testing.T) {
+	factors := []struct {
+		name        string
+		value       []string
+		expected    int64
+		expectedErr bool
+	}{
+		{"Valid no unit", []string{"3"}, 3, false},
+		{"Valid IEC unit", []string{"3KB"}, 3000, false},
+		{"Valid SI unit", []string{"3KiB"}, 3 * 1024, false},
+		{"not given", []string{}, DefaultPersistenceMinMMapSize, false},
+		{"invalid factor", []string{"-1"}, -1, true},
+		{"not parsable", []string{"I'm not a number"}, -1, true},
+	}
+	for _, tt := range factors {
+		t.Run(tt.name, func(t *testing.T) {
+			if len(tt.value) == 1 {
+				t.Setenv("PERSISTENCE_MIN_MMAP_SIZE", tt.value[0])
+			}
+			conf := Config{}
+			err := FromEnv(&conf)
+
+			if tt.expectedErr {
+				require.NotNil(t, err)
+			} else {
+				require.Equal(t, tt.expected, conf.Persistence.MinMMapSize)
+			}
+		})
+	}
+}
+
+func TestEnvironmentPersistenceMaxReuseWalSize(t *testing.T) {
+	factors := []struct {
+		name        string
+		value       []string
+		expected    int64
+		expectedErr bool
+	}{
+		{"Valid no unit", []string{"3"}, 3, false},
+		{"Valid IEC unit", []string{"3KB"}, 3000, false},
+		{"Valid SI unit", []string{"3KiB"}, 3 * 1024, false},
+		{"not given", []string{}, DefaultPersistenceMaxReuseWalSize, false},
+		{"invalid factor", []string{"-1"}, -1, true},
+		{"not parsable", []string{"I'm not a number"}, -1, true},
+	}
+	for _, tt := range factors {
+		t.Run(tt.name, func(t *testing.T) {
+			if len(tt.value) == 1 {
+				t.Setenv("PERSISTENCE_MAX_REUSE_WAL_SIZE", tt.value[0])
+			}
+			conf := Config{}
+			err := FromEnv(&conf)
+
+			if tt.expectedErr {
+				require.NotNil(t, err)
+			} else {
+				require.Equal(t, tt.expected, conf.Persistence.MaxReuseWalSize)
+			}
+		})
+	}
+}
+
+func TestParsePositiveFloat(t *testing.T) {
+	tests := []struct {
+		name         string
+		envName      string
+		envValue     string
+		defaultValue float64
+		expected     float64
+		expectError  bool
+	}{
+		{
+			name:         "valid positive float",
+			envName:      "TEST_POSITIVE_FLOAT",
+			envValue:     "1.5",
+			defaultValue: 2.0,
+			expected:     1.5,
+			expectError:  false,
+		},
+		{
+			name:         "valid integer as float",
+			envName:      "TEST_POSITIVE_FLOAT",
+			envValue:     "2",
+			defaultValue: 1.0,
+			expected:     2.0,
+			expectError:  false,
+		},
+		{
+			name:         "use default when env not set",
+			envName:      "TEST_POSITIVE_FLOAT",
+			envValue:     "",
+			defaultValue: 3.0,
+			expected:     3.0,
+			expectError:  false,
+		},
+		{
+			name:         "zero value should error",
+			envName:      "TEST_POSITIVE_FLOAT",
+			envValue:     "0",
+			defaultValue: 1.0,
+			expected:     0,
+			expectError:  true,
+		},
+		{
+			name:         "negative value should error",
+			envName:      "TEST_POSITIVE_FLOAT",
+			envValue:     "-1.5",
+			defaultValue: 1.0,
+			expected:     0,
+			expectError:  true,
+		},
+		{
+			name:         "invalid float should error",
+			envName:      "TEST_POSITIVE_FLOAT",
+			envValue:     "not-a-float",
+			defaultValue: 1.0,
+			expected:     0,
+			expectError:  true,
+		},
+		{
+			name:         "very small positive float",
+			envName:      "TEST_POSITIVE_FLOAT",
+			envValue:     "0.0000001",
+			defaultValue: 1.0,
+			expected:     0.0000001,
+			expectError:  false,
+		},
+		{
+			name:         "very large positive float",
+			envName:      "TEST_POSITIVE_FLOAT",
+			envValue:     "999999.999999",
+			defaultValue: 1.0,
+			expected:     999999.999999,
+			expectError:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up environment
+			if tt.envValue != "" {
+				t.Setenv(tt.envName, tt.envValue)
+			} else {
+				os.Unsetenv(tt.envName)
+			}
+
+			// Create a variable to store the result
+			var result float64
+
+			// Call the function
+			err := parsePositiveFloat(tt.envName, func(val float64) {
+				result = val
+			}, tt.defaultValue)
+
+			// Check error
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.envValue != "" {
+					assert.Contains(t, err.Error(), tt.envName)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected, result)
+			}
 		})
 	}
 }

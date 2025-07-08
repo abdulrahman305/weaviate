@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/weaviate/weaviate/cluster/router/types"
@@ -39,6 +40,7 @@ import (
 	"github.com/weaviate/weaviate/entities/search"
 	"github.com/weaviate/weaviate/entities/searchparams"
 	"github.com/weaviate/weaviate/entities/storobj"
+	"github.com/weaviate/weaviate/usecases/file"
 	"github.com/weaviate/weaviate/usecases/objects"
 	"github.com/weaviate/weaviate/usecases/replica"
 	"github.com/weaviate/weaviate/usecases/replica/hashtree"
@@ -65,9 +67,15 @@ type indices struct {
 	regexpShardsQueueSize     *regexp.Regexp
 	regexpShardsStatus        *regexp.Regexp
 	regexpShardFiles          *regexp.Regexp
+	regexpShardFileMetadata   *regexp.Regexp
 	regexpShard               *regexp.Regexp
 	regexpShardReinit         *regexp.Regexp
-	regexpPauseAndListFiles   *regexp.Regexp
+
+	regexpPauseFileActivity  *regexp.Regexp
+	regexpResumeFileActivity *regexp.Regexp
+	regexpListFiles          *regexp.Regexp
+
+	regexpAsyncReplicationTargetNode *regexp.Regexp
 
 	logger logrus.FieldLogger
 }
@@ -104,12 +112,20 @@ const (
 		`\/shards\/(` + sh + `)\/status`
 	urlPatternShardFiles = `\/indices\/(` + cl + `)` +
 		`\/shards\/(` + sh + `)\/files/(.*)`
+	urlPatternShardFileMetadata = `\/indices\/(` + cl + `)` +
+		`\/shards\/(` + sh + `)\/files:metadata/(.*)`
 	urlPatternShard = `\/indices\/(` + cl + `)` +
 		`\/shards\/(` + sh + `)$`
 	urlPatternShardReinit = `\/indices\/(` + cl + `)` +
 		`\/shards\/(` + sh + `):reinit`
-	urlPatternPauseAndListFiles = `\/indices\/(` + cl + `)` +
-		`\/shards\/(` + sh + `)\/background/pauselist`
+	urlPatternPauseFileActivity = `\/indices\/(` + cl + `)` +
+		`\/shards\/(` + sh + `)\/background:pause`
+	urlPatternResumeFileActivity = `\/indices\/(` + cl + `)` +
+		`\/shards\/(` + sh + `)\/background:resume`
+	urlPatternListFiles = `\/indices\/(` + cl + `)` +
+		`\/shards\/(` + sh + `)\/background:list`
+	urlPatternAsyncReplicationTargetNode = `\/indices\/(` + cl + `)` +
+		`\/shards\/(` + sh + `)\/async-replication-target-node`
 )
 
 type shards interface {
@@ -162,11 +178,24 @@ type shards interface {
 		filePath string) (io.WriteCloser, error)
 	CreateShard(ctx context.Context, indexName, shardName string) error
 	ReInitShard(ctx context.Context, indexName, shardName string) error
-	// PauseAndListFiles See adapters/clients.RemoteIndex.PauseAndListFiles
-	PauseAndListFiles(ctx context.Context, indexName, shardName string) ([]string, error)
+	// PauseFileActivity See adapters/clients.RemoteIndex.PauseFileActivity
+	PauseFileActivity(ctx context.Context, indexName, shardName string, schemaVersion uint64) error
+	// ResumeFileActivity See adapters/clients.RemoteIndex.ResumeFileActivity
+	ResumeFileActivity(ctx context.Context, indexName, shardName string) error
+	// ListFiles See adapters/clients.RemoteIndex.ListFiles
+	ListFiles(ctx context.Context, indexName, shardName string) ([]string, error)
+	// GetFileMetadata See adapters/clients.RemoteIndex.GetFileMetadata
+	GetFileMetadata(ctx context.Context, indexName, shardName,
+		relativeFilePath string) (file.FileMetadata, error)
 	// GetFile See adapters/clients.RemoteIndex.GetFile
 	GetFile(ctx context.Context, indexName, shardName,
 		relativeFilePath string) (io.ReadCloser, error)
+	// AddAsyncReplicationTargetNode See adapters/clients.RemoteIndex.AddAsyncReplicationTargetNode
+	AddAsyncReplicationTargetNode(ctx context.Context, indexName, shardName string,
+		targetNodeOverride additional.AsyncReplicationTargetNodeOverride, schemaVersion uint64) error
+	// RemoveAsyncReplicationTargetNode See adapters/clients.RemoteIndex.RemoveAsyncReplicationTargetNode
+	RemoveAsyncReplicationTargetNode(ctx context.Context, indexName, shardName string,
+		targetNodeOverride additional.AsyncReplicationTargetNodeOverride) error
 }
 
 type db interface {
@@ -183,20 +212,24 @@ func NewIndices(shards shards, db db, auth auth, maintenanceModeEnabled func() b
 		regexpObjectsSearch:        regexp.MustCompile(urlPatternObjectsSearch),
 		regexpObjectsFind:          regexp.MustCompile(urlPatternObjectsFind),
 
-		regexpObjectsAggregations: regexp.MustCompile(urlPatternObjectsAggregations),
-		regexpObject:              regexp.MustCompile(urlPatternObject),
-		regexpReferences:          regexp.MustCompile(urlPatternReferences),
-		regexpShardsQueueSize:     regexp.MustCompile(urlPatternShardsQueueSize),
-		regexpShardsStatus:        regexp.MustCompile(urlPatternShardsStatus),
-		regexpShardFiles:          regexp.MustCompile(urlPatternShardFiles),
-		regexpShard:               regexp.MustCompile(urlPatternShard),
-		regexpShardReinit:         regexp.MustCompile(urlPatternShardReinit),
-		regexpPauseAndListFiles:   regexp.MustCompile(urlPatternPauseAndListFiles),
-		shards:                    shards,
-		db:                        db,
-		auth:                      auth,
-		maintenanceModeEnabled:    maintenanceModeEnabled,
-		logger:                    logger,
+		regexpObjectsAggregations:        regexp.MustCompile(urlPatternObjectsAggregations),
+		regexpObject:                     regexp.MustCompile(urlPatternObject),
+		regexpReferences:                 regexp.MustCompile(urlPatternReferences),
+		regexpShardsQueueSize:            regexp.MustCompile(urlPatternShardsQueueSize),
+		regexpShardsStatus:               regexp.MustCompile(urlPatternShardsStatus),
+		regexpShardFiles:                 regexp.MustCompile(urlPatternShardFiles),
+		regexpShardFileMetadata:          regexp.MustCompile(urlPatternShardFileMetadata),
+		regexpShard:                      regexp.MustCompile(urlPatternShard),
+		regexpShardReinit:                regexp.MustCompile(urlPatternShardReinit),
+		regexpPauseFileActivity:          regexp.MustCompile(urlPatternPauseFileActivity),
+		regexpResumeFileActivity:         regexp.MustCompile(urlPatternResumeFileActivity),
+		regexpListFiles:                  regexp.MustCompile(urlPatternListFiles),
+		regexpAsyncReplicationTargetNode: regexp.MustCompile(urlPatternAsyncReplicationTargetNode),
+		shards:                           shards,
+		db:                               db,
+		auth:                             auth,
+		maintenanceModeEnabled:           maintenanceModeEnabled,
+		logger:                           logger,
 	}
 }
 
@@ -336,6 +369,14 @@ func (i *indices) indicesHandler() http.HandlerFunc {
 			http.Error(w, "405 Method not Allowed", http.StatusMethodNotAllowed)
 			return
 
+		case i.regexpShardFileMetadata.MatchString(path):
+			if r.Method == http.MethodGet {
+				i.getShardFileMetadata().ServeHTTP(w, r)
+				return
+			}
+			http.Error(w, "405 Method not Allowed", http.StatusMethodNotAllowed)
+			return
+
 		case i.regexpShard.MatchString(path):
 			if r.Method == http.MethodPost {
 				i.postShard().ServeHTTP(w, r)
@@ -350,9 +391,34 @@ func (i *indices) indicesHandler() http.HandlerFunc {
 			}
 			http.Error(w, "405 Method not Allowed", http.StatusMethodNotAllowed)
 			return
-		case i.regexpPauseAndListFiles.MatchString(path):
+		case i.regexpPauseFileActivity.MatchString(path):
 			if r.Method == http.MethodPost {
-				i.postPauseAndListFiles().ServeHTTP(w, r)
+				i.postPauseFileActivity().ServeHTTP(w, r)
+				return
+			}
+			http.Error(w, "405 Method not Allowed", http.StatusMethodNotAllowed)
+			return
+		case i.regexpResumeFileActivity.MatchString(path):
+			if r.Method == http.MethodPost {
+				i.postResumeFileActivity().ServeHTTP(w, r)
+				return
+			}
+			http.Error(w, "405 Method not Allowed", http.StatusMethodNotAllowed)
+			return
+		case i.regexpListFiles.MatchString(path):
+			if r.Method == http.MethodPost {
+				i.postListFiles().ServeHTTP(w, r)
+				return
+			}
+			http.Error(w, "405 Method not Allowed", http.StatusMethodNotAllowed)
+			return
+		case i.regexpAsyncReplicationTargetNode.MatchString(path):
+			if r.Method == http.MethodPost {
+				i.postAddAsyncReplicationTargetNode().ServeHTTP(w, r)
+				return
+			}
+			if r.Method == http.MethodDelete {
+				i.deleteAsyncReplicationTargetNode().ServeHTTP(w, r)
 				return
 			}
 			http.Error(w, "405 Method not Allowed", http.StatusMethodNotAllowed)
@@ -1383,6 +1449,40 @@ func (i *indices) putShardReinit() http.Handler {
 	})
 }
 
+func (i *indices) getShardFileMetadata() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		args := i.regexpShardFileMetadata.FindStringSubmatch(r.URL.Path)
+		if len(args) != 4 {
+			http.Error(w, "invalid URI", http.StatusBadRequest)
+			return
+		}
+
+		indexName, shardName, relativeFilePath := args[1], args[2], args[3]
+
+		ct, ok := IndicesPayloads.ShardFiles.CheckContentTypeHeaderReq(r)
+		if !ok {
+			http.Error(w, errors.Errorf("unexpected content type: %s", ct).Error(),
+				http.StatusUnsupportedMediaType)
+			return
+		}
+
+		md, err := i.shards.GetFileMetadata(r.Context(), indexName, shardName, relativeFilePath)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		resBytes, err := json.Marshal(md)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Write(resBytes)
+		w.WriteHeader(http.StatusOK)
+	})
+}
+
 func (i *indices) getShardFile() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		args := i.regexpShardFiles.FindStringSubmatch(r.URL.Path)
@@ -1425,9 +1525,9 @@ func (i *indices) getShardFile() http.Handler {
 	})
 }
 
-func (i *indices) postPauseAndListFiles() http.Handler {
+func (i *indices) postPauseFileActivity() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		args := i.regexpPauseAndListFiles.FindStringSubmatch(r.URL.Path)
+		args := i.regexpPauseFileActivity.FindStringSubmatch(r.URL.Path)
 		if len(args) != 3 {
 			http.Error(w, "invalid URI", http.StatusBadRequest)
 			return
@@ -1435,7 +1535,65 @@ func (i *indices) postPauseAndListFiles() http.Handler {
 
 		indexName, shardName := args[1], args[2]
 
-		relativeFilePaths, err := i.shards.PauseAndListFiles(r.Context(), indexName, shardName)
+		schemaVersion, err := extractSchemaVersionFromUrlQuery(r.URL.Query())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		err = i.shards.PauseFileActivity(r.Context(), indexName, shardName, schemaVersion)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		i.logger.WithFields(logrus.Fields{
+			"action": "replica_movement",
+			"index":  indexName,
+			"shard":  shardName,
+		}).Debug("Paused replica file activity")
+
+		w.WriteHeader(http.StatusOK)
+	})
+}
+
+func (i *indices) postResumeFileActivity() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		args := i.regexpPauseFileActivity.FindStringSubmatch(r.URL.Path)
+		if len(args) != 3 {
+			http.Error(w, "invalid URI", http.StatusBadRequest)
+			return
+		}
+
+		indexName, shardName := args[1], args[2]
+
+		err := i.shards.ResumeFileActivity(r.Context(), indexName, shardName)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		i.logger.WithFields(logrus.Fields{
+			"action": "replica_movement",
+			"index":  indexName,
+			"shard":  shardName,
+		}).Debug("Resumed replica file activity")
+
+		w.WriteHeader(http.StatusOK)
+	})
+}
+
+func (i *indices) postListFiles() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		args := i.regexpListFiles.FindStringSubmatch(r.URL.Path)
+		if len(args) != 3 {
+			http.Error(w, "invalid URI", http.StatusBadRequest)
+			return
+		}
+
+		indexName, shardName := args[1], args[2]
+
+		relativeFilePaths, err := i.shards.ListFiles(r.Context(), indexName, shardName)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -1452,9 +1610,71 @@ func (i *indices) postPauseAndListFiles() http.Handler {
 			"index":    indexName,
 			"shard":    shardName,
 			"numFiles": len(relativeFilePaths),
-		}).Debug("Paused and listed replica files")
+		}).Debug("Listed replica files")
 
 		w.Write(resBytes)
 		w.WriteHeader(http.StatusOK)
+	})
+}
+
+func (i *indices) postAddAsyncReplicationTargetNode() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		args := i.regexpAsyncReplicationTargetNode.FindStringSubmatch(r.URL.Path)
+		if len(args) != 3 {
+			http.Error(w, "invalid URI", http.StatusBadRequest)
+			return
+		}
+
+		indexName, shardName := args[1], args[2]
+		schemaVersion, err := extractSchemaVersionFromUrlQuery(r.URL.Query())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var targetNodeOverride additional.AsyncReplicationTargetNodeOverride
+		if err := json.NewDecoder(r.Body).Decode(&targetNodeOverride); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		err = i.shards.AddAsyncReplicationTargetNode(r.Context(), indexName, shardName, targetNodeOverride, schemaVersion)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	})
+}
+
+func (i *indices) deleteAsyncReplicationTargetNode() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		args := i.regexpAsyncReplicationTargetNode.FindStringSubmatch(r.URL.Path)
+		if len(args) != 3 {
+			http.Error(w, "invalid URI", http.StatusBadRequest)
+			return
+		}
+
+		indexName, shardName := args[1], args[2]
+
+		var targetNodeOverride additional.AsyncReplicationTargetNodeOverride
+		if err := json.NewDecoder(r.Body).Decode(&targetNodeOverride); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		err := i.shards.RemoveAsyncReplicationTargetNode(r.Context(), indexName, shardName, targetNodeOverride)
+		if err != nil {
+			// There's no easy to have a re-usable error type via all our interfaces to reach the shard/index
+			if strings.Contains(err.Error(), "shard not found") {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
 	})
 }

@@ -7,7 +7,7 @@ help:
 
 .DEFAULT_GOAL := weaviate
 
-GO_VERSION         := 1.22.0
+GO_VERSION         := 1.24.0
 
 # Git tags
 GIT_REVISION       := $(shell git rev-parse --short HEAD)
@@ -90,11 +90,16 @@ monitoring: ## Run the prometheus and grafana for monitoring
 local: ## Run the local development setup with single node
 	./tools/dev/run_dev_server.sh local-single-node
 
+local-oidc:
+	./tools/dev/run_dev_server.sh local-wcs-oidc-and-apikey
+
 debug: ## Connect local weaviate server via delv for debugging
 	./tools/dev/run_dev_server.sh debug
 
 banner: ## Add Weaviate banner with license details
 	./tools/gen-code-from-swagger.sh
 
-mocks:
-	mockery
+.PHONY: mocks
+mocks: ## Regenerate test mocks
+	docker run --rm -v $(PWD):/src -w /src vektra/mockery:v2.53.2
+	$(MAKE) banner

@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -35,10 +35,19 @@ import (
 	"github.com/weaviate/weaviate/entities/search"
 	"github.com/weaviate/weaviate/entities/searchparams"
 	"github.com/weaviate/weaviate/entities/storobj"
+	"github.com/weaviate/weaviate/usecases/file"
 	"github.com/weaviate/weaviate/usecases/objects"
 	"github.com/weaviate/weaviate/usecases/replica"
 	"github.com/weaviate/weaviate/usecases/scaler"
 )
+
+const (
+	asyncReplicationTargetNodeEndpointPattern = "/indices/%s/shards/%s/async-replication-target-node"
+)
+
+func AsyncReplicationTargetNodeEndpoint(indexName, shardName string) string {
+	return fmt.Sprintf(asyncReplicationTargetNodeEndpointPattern, indexName, shardName)
+}
 
 type RemoteIndex struct {
 	retryClient
@@ -763,16 +772,73 @@ func (c *RemoteIndex) IncreaseReplicationFactor(ctx context.Context,
 	return c.retry(ctx, 34, try)
 }
 
-// PauseAndListFiles pauses the collection's shard replica background processes on the specified
-// host and returns a list of files that can be used to get the shard data at the time the pause
-// was requested. You should explicitly resume the background processes once you're done with the
-// files. The returned relative file paths are relative to the shard's root directory.
+// PauseFileActivity pauses the collection's shard replica background processes on the specified
+// host. You should explicitly resume the background processes once you're done with the
+// files.
+func (c *RemoteIndex) PauseFileActivity(ctx context.Context,
+	hostName, indexName, shardName string, schemaVersion uint64,
+) error {
+	value := []string{strconv.FormatUint(schemaVersion, 10)}
+	req, err := setupRequest(ctx, http.MethodPost, hostName,
+		fmt.Sprintf("/indices/%s/shards/%s/background:pause", indexName, shardName),
+		url.Values{replica.SchemaVersionKey: value}.Encode(),
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("create http request: %w", err)
+	}
+
+	try := func(ctx context.Context) (bool, error) {
+		res, err := c.client.Do(req)
+		if err != nil {
+			return ctx.Err() == nil, fmt.Errorf("connect: %w", err)
+		}
+		defer res.Body.Close()
+
+		if code := res.StatusCode; code != http.StatusOK {
+			body, _ := io.ReadAll(res.Body)
+			return shouldRetry(code), fmt.Errorf("status code: %v body: (%s)", code, body)
+		}
+		return false, nil
+	}
+	return c.retry(ctx, 9, try)
+}
+
+// ResumeFileActivity resumes the collection's shard replica background processes on the specified host
+func (c *RemoteIndex) ResumeFileActivity(ctx context.Context,
+	hostName, indexName, shardName string,
+) error {
+	req, err := setupRequest(ctx, http.MethodPost, hostName,
+		fmt.Sprintf("/indices/%s/shards/%s/background:resume", indexName, shardName),
+		"", nil)
+	if err != nil {
+		return fmt.Errorf("create http request: %w", err)
+	}
+
+	try := func(ctx context.Context) (bool, error) {
+		res, err := c.client.Do(req)
+		if err != nil {
+			return ctx.Err() == nil, fmt.Errorf("connect: %w", err)
+		}
+		defer res.Body.Close()
+
+		if code := res.StatusCode; code != http.StatusOK {
+			body, _ := io.ReadAll(res.Body)
+			return shouldRetry(code), fmt.Errorf("status code: %v body: (%s)", code, body)
+		}
+		return false, nil
+	}
+	return c.retry(ctx, 9, try)
+}
+
+// ListFiles returns a list of files that can be used to get the shard data at the time the pause
+// was requested. The returned relative file paths are relative to the shard's root directory.
 // indexName is the collection name.
-func (c *RemoteIndex) PauseAndListFiles(ctx context.Context,
+func (c *RemoteIndex) ListFiles(ctx context.Context,
 	hostName, indexName, shardName string,
 ) ([]string, error) {
 	req, err := setupRequest(ctx, http.MethodPost, hostName,
-		fmt.Sprintf("/indices/%s/shards/%s/background/pauselist", indexName, shardName),
+		fmt.Sprintf("/indices/%s/shards/%s/background:list", indexName, shardName),
 		"", nil)
 	if err != nil {
 		return []string{}, fmt.Errorf("create http request: %w", err)
@@ -803,6 +869,50 @@ func (c *RemoteIndex) PauseAndListFiles(ctx context.Context,
 		return false, nil
 	}
 	return relativeFilePaths, c.retry(ctx, 9, try)
+}
+
+// GetFileMetadata returns file info to the file relative to the
+// shard's root directory.
+func (c *RemoteIndex) GetFileMetadata(ctx context.Context, hostName, indexName,
+	shardName, relativeFilePath string,
+) (file.FileMetadata, error) {
+	req, err := setupRequest(ctx, http.MethodGet, hostName,
+		fmt.Sprintf("/indices/%s/shards/%s/files:metadata/%s", indexName, shardName, relativeFilePath),
+		"", nil)
+	if err != nil {
+		return file.FileMetadata{}, fmt.Errorf("create http request: %w", err)
+	}
+
+	clusterapi.IndicesPayloads.ShardFiles.SetContentTypeHeaderReq(req)
+
+	var md file.FileMetadata
+
+	try := func(ctx context.Context) (bool, error) {
+		res, err := c.client.Do(req)
+		if err != nil {
+			return ctx.Err() == nil, fmt.Errorf("connect: %w", err)
+		}
+
+		if res.StatusCode != http.StatusOK {
+			defer res.Body.Close()
+			body, _ := io.ReadAll(res.Body)
+			return shouldRetry(res.StatusCode), fmt.Errorf(
+				"unexpected status code %d (%s)", res.StatusCode, body)
+		}
+
+		resBytes, err := io.ReadAll(res.Body)
+		if err != nil {
+			return false, errors.Wrap(err, "read body")
+		}
+
+		md, err = clusterapi.IndicesPayloads.ShardFileMetadataResults.Unmarshal(resBytes)
+		if err != nil {
+			return false, errors.Wrap(err, "unmarshal body")
+		}
+
+		return false, nil
+	}
+	return md, c.retry(ctx, 9, try)
 }
 
 // GetFile caller must close the returned io.ReadCloser if no error is returned.
@@ -836,6 +946,80 @@ func (c *RemoteIndex) GetFile(ctx context.Context, hostName, indexName,
 		return false, nil
 	}
 	return file, c.retry(ctx, 9, try)
+}
+
+// AddAsyncReplicationTargetNode configures and starts async replication for the given
+// host with the specified override.
+func (c *RemoteIndex) AddAsyncReplicationTargetNode(
+	ctx context.Context,
+	hostName, indexName, shardName string,
+	targetNodeOverride additional.AsyncReplicationTargetNodeOverride,
+	schemaVersion uint64,
+) error {
+	body, err := clusterapi.IndicesPayloads.AsyncReplicationTargetNode.Marshal(targetNodeOverride)
+	if err != nil {
+		return fmt.Errorf("marshal target node override: %w", err)
+	}
+	value := []string{strconv.FormatUint(schemaVersion, 10)}
+	req, err := setupRequest(ctx, http.MethodPost, hostName,
+		AsyncReplicationTargetNodeEndpoint(indexName, shardName),
+		url.Values{replica.SchemaVersionKey: value}.Encode(),
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return fmt.Errorf("create http request: %w", err)
+	}
+	clusterapi.IndicesPayloads.AsyncReplicationTargetNode.SetContentTypeHeaderReq(req)
+
+	try := func(ctx context.Context) (bool, error) {
+		res, err := c.client.Do(req)
+		if err != nil {
+			return ctx.Err() == nil, fmt.Errorf("connect: %w", err)
+		}
+		defer res.Body.Close()
+
+		if code := res.StatusCode; code != http.StatusOK {
+			body, _ := io.ReadAll(res.Body)
+			return shouldRetry(code), fmt.Errorf("status code: %v body: (%s)", code, body)
+		}
+		return false, nil
+	}
+	return c.retry(ctx, 9, try)
+}
+
+// RemoveAsyncReplicationTargetNode removes the given target node override for async replication.
+func (c *RemoteIndex) RemoveAsyncReplicationTargetNode(
+	ctx context.Context,
+	hostName, indexName, shardName string,
+	targetNodeOverride additional.AsyncReplicationTargetNodeOverride,
+) error {
+	body, err := clusterapi.IndicesPayloads.AsyncReplicationTargetNode.Marshal(targetNodeOverride)
+	if err != nil {
+		return fmt.Errorf("marshal target node override: %w", err)
+	}
+
+	req, err := setupRequest(ctx, http.MethodDelete, hostName,
+		AsyncReplicationTargetNodeEndpoint(indexName, shardName),
+		"", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create http request: %w", err)
+	}
+	clusterapi.IndicesPayloads.AsyncReplicationTargetNode.SetContentTypeHeaderReq(req)
+
+	try := func(ctx context.Context) (bool, error) {
+		res, err := c.client.Do(req)
+		if err != nil {
+			return ctx.Err() == nil, fmt.Errorf("connect: %w", err)
+		}
+		defer res.Body.Close()
+
+		if code := res.StatusCode; code != http.StatusNoContent {
+			body, _ := io.ReadAll(res.Body)
+			return shouldRetry(code), fmt.Errorf("status code: %v body: (%s)", code, body)
+		}
+		return false, nil
+	}
+	return c.retry(ctx, 9, try)
 }
 
 // setupRequest is a simple helper to create a new http request with the given method, host, path,

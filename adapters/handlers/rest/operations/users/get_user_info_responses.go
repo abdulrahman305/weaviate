@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -162,6 +162,51 @@ func (o *GetUserInfoNotFound) WriteResponse(rw http.ResponseWriter, producer run
 	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
 
 	rw.WriteHeader(404)
+}
+
+// GetUserInfoUnprocessableEntityCode is the HTTP code returned for type GetUserInfoUnprocessableEntity
+const GetUserInfoUnprocessableEntityCode int = 422
+
+/*
+GetUserInfoUnprocessableEntity Request body is well-formed (i.e., syntactically correct), but semantically erroneous.
+
+swagger:response getUserInfoUnprocessableEntity
+*/
+type GetUserInfoUnprocessableEntity struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.ErrorResponse `json:"body,omitempty"`
+}
+
+// NewGetUserInfoUnprocessableEntity creates GetUserInfoUnprocessableEntity with default headers values
+func NewGetUserInfoUnprocessableEntity() *GetUserInfoUnprocessableEntity {
+
+	return &GetUserInfoUnprocessableEntity{}
+}
+
+// WithPayload adds the payload to the get user info unprocessable entity response
+func (o *GetUserInfoUnprocessableEntity) WithPayload(payload *models.ErrorResponse) *GetUserInfoUnprocessableEntity {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get user info unprocessable entity response
+func (o *GetUserInfoUnprocessableEntity) SetPayload(payload *models.ErrorResponse) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetUserInfoUnprocessableEntity) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(422)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // GetUserInfoInternalServerErrorCode is the HTTP code returned for type GetUserInfoInternalServerError

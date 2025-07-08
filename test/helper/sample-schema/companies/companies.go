@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -185,13 +185,13 @@ func PerformVectorSearchGRPCTest(t *testing.T, host string, className string) {
 	assertResultsGRPC(t, host, &req)
 }
 
-func PerformHybridSearchTest(t *testing.T, host string, className string) {
+func PerformHybridSearchWithTextTest(t *testing.T, host string, className, text string) {
 	query := fmt.Sprintf(`
 				{
 					Get {
 						%s(
 							hybrid:{
-								query:"SpaceX"
+								query:"%s"
 								alpha:0.75
 							}
 						){
@@ -202,8 +202,12 @@ func PerformHybridSearchTest(t *testing.T, host string, className string) {
 						}
 					}
 				}
-			`, className)
+			`, className, text)
 	assertResults(t, host, className, query)
+}
+
+func PerformHybridSearchTest(t *testing.T, host string, className string) {
+	PerformHybridSearchWithTextTest(t, host, className, "SpaceX")
 }
 
 func PerformHybridSearchGRPCTest(t *testing.T, host string, className string) {

@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaviate/weaviate/entities/additional"
 	"github.com/weaviate/weaviate/entities/models"
-	"github.com/weaviate/weaviate/entities/schema"
+	"github.com/weaviate/weaviate/entities/modelsext"
 )
 
 func TestVectors(t *testing.T) {
@@ -92,7 +92,7 @@ func TestVectors(t *testing.T) {
 				VectorConfig:    map[string]models.VectorConfig{"first": {}, "second": {}},
 			},
 			obj: &models.Object{
-				Vectors: models.Vectors{"first": []float32{1, 2, 3}, "second": []float32{4, 5, 6}, schema.DefaultNamedVectorName: []float32{7, 8, 9}},
+				Vectors: models.Vectors{"first": []float32{1, 2, 3}, "second": []float32{4, 5, 6}, modelsext.DefaultNamedVectorName: []float32{7, 8, 9}},
 			},
 			objNew: &models.Object{
 				Vectors: models.Vectors{"first": []float32{1, 2, 3}, "second": []float32{4, 5, 6}},
@@ -101,13 +101,13 @@ func TestVectors(t *testing.T) {
 		},
 		"default vector not touched in named vector class": {
 			class: &models.Class{
-				VectorConfig: map[string]models.VectorConfig{schema.DefaultNamedVectorName: {}},
+				VectorConfig: map[string]models.VectorConfig{modelsext.DefaultNamedVectorName: {}},
 			},
 			obj: &models.Object{
-				Vectors: models.Vectors{schema.DefaultNamedVectorName: []float32{1, 2, 3}},
+				Vectors: models.Vectors{modelsext.DefaultNamedVectorName: []float32{1, 2, 3}},
 			},
 			objNew: &models.Object{
-				Vectors: models.Vectors{schema.DefaultNamedVectorName: []float32{1, 2, 3}},
+				Vectors: models.Vectors{modelsext.DefaultNamedVectorName: []float32{1, 2, 3}},
 			},
 		},
 	}

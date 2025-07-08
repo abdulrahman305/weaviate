@@ -4,7 +4,7 @@
 //  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
 //   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
 //
-//  Copyright © 2016 - 2024 Weaviate B.V. All rights reserved.
+//  Copyright © 2016 - 2025 Weaviate B.V. All rights reserved.
 //
 //  CONTACT: hello@weaviate.io
 //
@@ -27,6 +27,7 @@ import (
 	"github.com/weaviate/weaviate/entities/additional"
 	"github.com/weaviate/weaviate/entities/cyclemanager"
 	"github.com/weaviate/weaviate/entities/filters"
+	entinverted "github.com/weaviate/weaviate/entities/inverted"
 	"github.com/weaviate/weaviate/entities/models"
 	"github.com/weaviate/weaviate/entities/schema"
 	"github.com/weaviate/weaviate/usecases/config"
@@ -84,7 +85,7 @@ func Test_Filters_String(t *testing.T) {
 		require.Nil(t, bWithFrequency.FlushAndSwitch())
 	})
 
-	bitmapFactory := roaringset.NewBitmapFactory(newFakeMaxIDGetter(200))
+	bitmapFactory := roaringset.NewBitmapFactory(roaringset.NewBitmapBufPoolNoop(), newFakeMaxIDGetter(200))
 
 	searcher := NewSearcher(logger, store, createSchema().GetClass, nil, nil,
 		fakeStopwordDetector{}, 2, func() bool { return false }, "",
@@ -342,7 +343,7 @@ func Test_Filters_Int(t *testing.T) {
 		{val: 16, ids: []uint64{16}},
 	}
 
-	bitmapFactory := roaringset.NewBitmapFactory(newFakeMaxIDGetter(maxDocID))
+	bitmapFactory := roaringset.NewBitmapFactory(roaringset.NewBitmapBufPoolNoop(), newFakeMaxIDGetter(maxDocID))
 	searcher := NewSearcher(logger, store, createSchema().GetClass, nil, nil,
 		fakeStopwordDetector{}, 2, func() bool { return false }, "",
 		config.DefaultQueryNestedCrossReferenceLimit, bitmapFactory)
@@ -364,7 +365,7 @@ func Test_Filters_Int(t *testing.T) {
 		t.Run("import data", func(t *testing.T) {
 			for _, idx := range fakeInvertedIndex {
 				idValues := idsToBinaryList(idx.ids)
-				valueBytes, err := LexicographicallySortableInt64(idx.val)
+				valueBytes, err := entinverted.LexicographicallySortableInt64(idx.val)
 				require.NoError(t, err)
 				require.NoError(t, bucket.SetAdd(valueBytes, idValues))
 			}
@@ -559,7 +560,7 @@ func Test_Filters_Int(t *testing.T) {
 				})
 
 				t.Run("update", func(t *testing.T) {
-					valueBytes, _ := LexicographicallySortableInt64(7)
+					valueBytes, _ := entinverted.LexicographicallySortableInt64(7)
 					idsBinary := idsToBinaryList([]uint64{21})
 					require.Nil(t, bucket.SetAdd(valueBytes, idsBinary))
 				})
@@ -574,7 +575,7 @@ func Test_Filters_Int(t *testing.T) {
 
 				t.Run("restore inverted index, so we can run test suite again", func(t *testing.T) {
 					idsList := idsToBinaryList([]uint64{21})
-					valueBytes, _ := LexicographicallySortableInt64(7)
+					valueBytes, _ := entinverted.LexicographicallySortableInt64(7)
 					require.NoError(t, bucket.SetDeleteSingle(valueBytes, idsList[0]))
 				})
 			})
@@ -590,7 +591,7 @@ func Test_Filters_Int(t *testing.T) {
 
 		t.Run("import data", func(t *testing.T) {
 			for _, idx := range fakeInvertedIndex {
-				valueBytes, err := LexicographicallySortableInt64(idx.val)
+				valueBytes, err := entinverted.LexicographicallySortableInt64(idx.val)
 				require.NoError(t, err)
 				require.NoError(t, bucket.RoaringSetAddList(valueBytes, idx.ids))
 			}
@@ -785,7 +786,7 @@ func Test_Filters_Int(t *testing.T) {
 				})
 
 				t.Run("update", func(t *testing.T) {
-					valueBytes, _ := LexicographicallySortableInt64(7)
+					valueBytes, _ := entinverted.LexicographicallySortableInt64(7)
 					require.Nil(t, bucket.RoaringSetAddOne(valueBytes, 21))
 				})
 
@@ -798,7 +799,7 @@ func Test_Filters_Int(t *testing.T) {
 				})
 
 				t.Run("restore inverted index, so we can run test suite again", func(t *testing.T) {
-					valueBytes, _ := LexicographicallySortableInt64(7)
+					valueBytes, _ := entinverted.LexicographicallySortableInt64(7)
 					require.NoError(t, bucket.RoaringSetRemoveOne(valueBytes, 21))
 				})
 			})
@@ -806,226 +807,247 @@ func Test_Filters_Int(t *testing.T) {
 	})
 
 	t.Run("strategy roaringsetrange", func(t *testing.T) {
-		propName := "inverted-without-frequency-roaringsetrange"
-		bucketName := helpers.BucketRangeableFromPropNameLSM(propName)
-		require.NoError(t, store.CreateOrLoadBucket(context.Background(),
-			bucketName, lsmkv.WithStrategy(lsmkv.StrategyRoaringSetRange)))
-		bucket := store.Bucket(bucketName)
+		run := func(t *testing.T, propName string, bucketName string) {
+			bucket := store.Bucket(bucketName)
 
-		t.Run("import data", func(t *testing.T) {
-			for _, idx := range fakeInvertedIndex {
-				valueBytes, err := LexicographicallySortableInt64(idx.val)
-				require.NoError(t, err)
-				require.NoError(t, bucket.RoaringSetRangeAdd(binary.BigEndian.Uint64(valueBytes), idx.ids...))
+			t.Run("import data", func(t *testing.T) {
+				for _, idx := range fakeInvertedIndex {
+					valueBytes, err := entinverted.LexicographicallySortableInt64(idx.val)
+					require.NoError(t, err)
+					require.NoError(t, bucket.RoaringSetRangeAdd(binary.BigEndian.Uint64(valueBytes), idx.ids...))
+				}
+
+				require.Nil(t, bucket.FlushAndSwitch())
+			})
+
+			tests := []test{
+				{
+					name: "exact match - single level",
+					filter: &filters.LocalFilter{
+						Root: &filters.Clause{
+							Operator: filters.OperatorEqual,
+							On: &filters.Path{
+								Class:    "foo",
+								Property: schema.PropertyName(propName),
+							},
+							Value: &filters.Value{
+								Value: 7,
+								Type:  schema.DataTypeInt,
+							},
+						},
+					},
+					expectedListBeforeUpdate: []uint64{7},
+					expectedListAfterUpdate:  []uint64{7, 21},
+				},
+				{
+					name: "not equal",
+					filter: &filters.LocalFilter{
+						Root: &filters.Clause{
+							Operator: filters.OperatorNotEqual,
+							On: &filters.Path{
+								Class:    "foo",
+								Property: schema.PropertyName(propName),
+							},
+							Value: &filters.Value{
+								Value: 13,
+								Type:  schema.DataTypeInt,
+							},
+						},
+					},
+					expectedListBeforeUpdate: []uint64{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16},
+					expectedListAfterUpdate:  []uint64{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 21},
+				},
+				{
+					name: "exact match - or filter",
+					filter: &filters.LocalFilter{
+						Root: &filters.Clause{
+							Operator: filters.OperatorOr,
+							Operands: []filters.Clause{
+								{
+									Operator: filters.OperatorEqual,
+									On: &filters.Path{
+										Class:    "foo",
+										Property: schema.PropertyName(propName),
+									},
+									Value: &filters.Value{
+										Value: 7,
+										Type:  schema.DataTypeInt,
+									},
+								},
+								{
+									Operator: filters.OperatorEqual,
+									On: &filters.Path{
+										Class:    "foo",
+										Property: schema.PropertyName(propName),
+									},
+									Value: &filters.Value{
+										Value: 8,
+										Type:  schema.DataTypeInt,
+									},
+								},
+							},
+						},
+					},
+					expectedListBeforeUpdate: []uint64{7, 8},
+					expectedListAfterUpdate:  []uint64{7, 8, 21},
+				},
+				{
+					name: "exact match - and filter",
+					filter: &filters.LocalFilter{
+						Root: &filters.Clause{
+							Operator: filters.OperatorAnd,
+							Operands: []filters.Clause{
+								{
+									Operator: filters.OperatorEqual,
+									On: &filters.Path{
+										Class:    "foo",
+										Property: schema.PropertyName(propName),
+									},
+									Value: &filters.Value{
+										Value: 7,
+										Type:  schema.DataTypeInt,
+									},
+								},
+								{
+									Operator: filters.OperatorEqual,
+									On: &filters.Path{
+										Class:    "foo",
+										Property: schema.PropertyName(propName),
+									},
+									Value: &filters.Value{
+										Value: 14,
+										Type:  schema.DataTypeInt,
+									},
+								},
+							},
+						},
+					},
+					expectedListBeforeUpdate: []uint64{},
+					expectedListAfterUpdate:  []uint64{},
+				},
+				{
+					name: "range match - or filter",
+					filter: &filters.LocalFilter{
+						Root: &filters.Clause{
+							Operator: filters.OperatorOr,
+							Operands: []filters.Clause{
+								{
+									Operator: filters.OperatorLessThanEqual,
+									On: &filters.Path{
+										Class:    "foo",
+										Property: schema.PropertyName(propName),
+									},
+									Value: &filters.Value{
+										Value: 7,
+										Type:  schema.DataTypeInt,
+									},
+								},
+								{
+									Operator: filters.OperatorGreaterThan,
+									On: &filters.Path{
+										Class:    "foo",
+										Property: schema.PropertyName(propName),
+									},
+									Value: &filters.Value{
+										Value: 14,
+										Type:  schema.DataTypeInt,
+									},
+								},
+							},
+						},
+					},
+					expectedListBeforeUpdate: []uint64{2, 3, 4, 5, 6, 7, 15, 16},
+					expectedListAfterUpdate:  []uint64{2, 3, 4, 5, 6, 7, 15, 16, 21},
+				},
+				{
+					name: "range match - and filter",
+					filter: &filters.LocalFilter{
+						Root: &filters.Clause{
+							Operator: filters.OperatorAnd,
+							Operands: []filters.Clause{
+								{
+									Operator: filters.OperatorGreaterThanEqual,
+									On: &filters.Path{
+										Class:    "foo",
+										Property: schema.PropertyName(propName),
+									},
+									Value: &filters.Value{
+										Value: 7,
+										Type:  schema.DataTypeInt,
+									},
+								},
+								{
+									Operator: filters.OperatorLessThan,
+									On: &filters.Path{
+										Class:    "foo",
+										Property: schema.PropertyName(propName),
+									},
+									Value: &filters.Value{
+										Value: 14,
+										Type:  schema.DataTypeInt,
+									},
+								},
+							},
+						},
+					},
+					expectedListBeforeUpdate: []uint64{7, 8, 9, 10, 11, 12, 13},
+					expectedListAfterUpdate:  []uint64{7, 8, 9, 10, 11, 12, 13, 21},
+				},
 			}
 
-			require.Nil(t, bucket.FlushAndSwitch())
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					t.Run("before update", func(t *testing.T) {
+						res, err := searcher.DocIDs(context.Background(), test.filter,
+							additional.Properties{}, className)
+						assert.NoError(t, err)
+						assert.Equal(t, test.expectedListBeforeUpdate, res.Slice())
+						res.Close()
+					})
+
+					t.Run("update", func(t *testing.T) {
+						valueBytes, _ := entinverted.LexicographicallySortableInt64(7)
+						require.Nil(t, bucket.RoaringSetRangeAdd(binary.BigEndian.Uint64(valueBytes), 21))
+					})
+
+					t.Run("after update", func(t *testing.T) {
+						res, err := searcher.DocIDs(context.Background(), test.filter,
+							additional.Properties{}, className)
+						assert.NoError(t, err)
+						assert.Equal(t, test.expectedListAfterUpdate, res.Slice())
+						res.Close()
+					})
+
+					t.Run("restore inverted index, so we can run test suite again", func(t *testing.T) {
+						valueBytes, _ := entinverted.LexicographicallySortableInt64(7)
+						require.NoError(t, bucket.RoaringSetRangeRemove(binary.BigEndian.Uint64(valueBytes), 21))
+					})
+				})
+			}
+		}
+
+		t.Run("segments on disk", func(t *testing.T) {
+			propName := "inverted-roaringsetrange-on-disk"
+			bucketName := helpers.BucketRangeableFromPropNameLSM(propName)
+			err := store.CreateOrLoadBucket(context.Background(), bucketName,
+				lsmkv.WithStrategy(lsmkv.StrategyRoaringSetRange))
+			require.NoError(t, err)
+
+			run(t, propName, bucketName)
 		})
 
-		tests := []test{
-			{
-				name: "exact match - single level",
-				filter: &filters.LocalFilter{
-					Root: &filters.Clause{
-						Operator: filters.OperatorEqual,
-						On: &filters.Path{
-							Class:    "foo",
-							Property: schema.PropertyName(propName),
-						},
-						Value: &filters.Value{
-							Value: 7,
-							Type:  schema.DataTypeInt,
-						},
-					},
-				},
-				expectedListBeforeUpdate: []uint64{7},
-				expectedListAfterUpdate:  []uint64{7, 21},
-			},
-			{
-				name: "not equal",
-				filter: &filters.LocalFilter{
-					Root: &filters.Clause{
-						Operator: filters.OperatorNotEqual,
-						On: &filters.Path{
-							Class:    "foo",
-							Property: schema.PropertyName(propName),
-						},
-						Value: &filters.Value{
-							Value: 13,
-							Type:  schema.DataTypeInt,
-						},
-					},
-				},
-				expectedListBeforeUpdate: []uint64{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16},
-				expectedListAfterUpdate:  []uint64{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 21},
-			},
-			{
-				name: "exact match - or filter",
-				filter: &filters.LocalFilter{
-					Root: &filters.Clause{
-						Operator: filters.OperatorOr,
-						Operands: []filters.Clause{
-							{
-								Operator: filters.OperatorEqual,
-								On: &filters.Path{
-									Class:    "foo",
-									Property: schema.PropertyName(propName),
-								},
-								Value: &filters.Value{
-									Value: 7,
-									Type:  schema.DataTypeInt,
-								},
-							},
-							{
-								Operator: filters.OperatorEqual,
-								On: &filters.Path{
-									Class:    "foo",
-									Property: schema.PropertyName(propName),
-								},
-								Value: &filters.Value{
-									Value: 8,
-									Type:  schema.DataTypeInt,
-								},
-							},
-						},
-					},
-				},
-				expectedListBeforeUpdate: []uint64{7, 8},
-				expectedListAfterUpdate:  []uint64{7, 8, 21},
-			},
-			{
-				name: "exact match - and filter",
-				filter: &filters.LocalFilter{
-					Root: &filters.Clause{
-						Operator: filters.OperatorAnd,
-						Operands: []filters.Clause{
-							{
-								Operator: filters.OperatorEqual,
-								On: &filters.Path{
-									Class:    "foo",
-									Property: schema.PropertyName(propName),
-								},
-								Value: &filters.Value{
-									Value: 7,
-									Type:  schema.DataTypeInt,
-								},
-							},
-							{
-								Operator: filters.OperatorEqual,
-								On: &filters.Path{
-									Class:    "foo",
-									Property: schema.PropertyName(propName),
-								},
-								Value: &filters.Value{
-									Value: 14,
-									Type:  schema.DataTypeInt,
-								},
-							},
-						},
-					},
-				},
-				expectedListBeforeUpdate: []uint64{},
-				expectedListAfterUpdate:  []uint64{},
-			},
-			{
-				name: "range match - or filter",
-				filter: &filters.LocalFilter{
-					Root: &filters.Clause{
-						Operator: filters.OperatorOr,
-						Operands: []filters.Clause{
-							{
-								Operator: filters.OperatorLessThanEqual,
-								On: &filters.Path{
-									Class:    "foo",
-									Property: schema.PropertyName(propName),
-								},
-								Value: &filters.Value{
-									Value: 7,
-									Type:  schema.DataTypeInt,
-								},
-							},
-							{
-								Operator: filters.OperatorGreaterThan,
-								On: &filters.Path{
-									Class:    "foo",
-									Property: schema.PropertyName(propName),
-								},
-								Value: &filters.Value{
-									Value: 14,
-									Type:  schema.DataTypeInt,
-								},
-							},
-						},
-					},
-				},
-				expectedListBeforeUpdate: []uint64{2, 3, 4, 5, 6, 7, 15, 16},
-				expectedListAfterUpdate:  []uint64{2, 3, 4, 5, 6, 7, 15, 16, 21},
-			},
-			{
-				name: "range match - and filter",
-				filter: &filters.LocalFilter{
-					Root: &filters.Clause{
-						Operator: filters.OperatorAnd,
-						Operands: []filters.Clause{
-							{
-								Operator: filters.OperatorGreaterThanEqual,
-								On: &filters.Path{
-									Class:    "foo",
-									Property: schema.PropertyName(propName),
-								},
-								Value: &filters.Value{
-									Value: 7,
-									Type:  schema.DataTypeInt,
-								},
-							},
-							{
-								Operator: filters.OperatorLessThan,
-								On: &filters.Path{
-									Class:    "foo",
-									Property: schema.PropertyName(propName),
-								},
-								Value: &filters.Value{
-									Value: 14,
-									Type:  schema.DataTypeInt,
-								},
-							},
-						},
-					},
-				},
-				expectedListBeforeUpdate: []uint64{7, 8, 9, 10, 11, 12, 13},
-				expectedListAfterUpdate:  []uint64{7, 8, 9, 10, 11, 12, 13, 21},
-			},
-		}
+		t.Run("segment in memory", func(t *testing.T) {
+			propName := "inverted-roaringsetrange-in-memory"
+			bucketName := helpers.BucketRangeableFromPropNameLSM(propName)
+			err := store.CreateOrLoadBucket(context.Background(), bucketName,
+				lsmkv.WithStrategy(lsmkv.StrategyRoaringSetRange),
+				lsmkv.WithKeepSegmentsInMemory(true),
+				lsmkv.WithBitmapBufPool(roaringset.NewBitmapBufPoolNoop()),
+			)
+			require.NoError(t, err)
 
-		for _, test := range tests {
-			t.Run(test.name, func(t *testing.T) {
-				t.Run("before update", func(t *testing.T) {
-					res, err := searcher.DocIDs(context.Background(), test.filter,
-						additional.Properties{}, className)
-					assert.NoError(t, err)
-					assert.Equal(t, test.expectedListBeforeUpdate, res.Slice())
-					res.Close()
-				})
-
-				t.Run("update", func(t *testing.T) {
-					valueBytes, _ := LexicographicallySortableInt64(7)
-					require.Nil(t, bucket.RoaringSetRangeAdd(binary.BigEndian.Uint64(valueBytes), 21))
-				})
-
-				t.Run("after update", func(t *testing.T) {
-					res, err := searcher.DocIDs(context.Background(), test.filter,
-						additional.Properties{}, className)
-					assert.NoError(t, err)
-					assert.Equal(t, test.expectedListAfterUpdate, res.Slice())
-					res.Close()
-				})
-
-				t.Run("restore inverted index, so we can run test suite again", func(t *testing.T) {
-					valueBytes, _ := LexicographicallySortableInt64(7)
-					require.NoError(t, bucket.RoaringSetRangeRemove(binary.BigEndian.Uint64(valueBytes), 21))
-				})
-			})
-		}
+			run(t, propName, bucketName)
+		})
 	})
 }
 
@@ -1064,7 +1086,7 @@ func Test_Filters_String_DuplicateEntriesInAnd(t *testing.T) {
 		require.Nil(t, bWithFrequency.FlushAndSwitch())
 	})
 
-	bitmapFactory := roaringset.NewBitmapFactory(newFakeMaxIDGetter(200))
+	bitmapFactory := roaringset.NewBitmapFactory(roaringset.NewBitmapBufPoolNoop(), newFakeMaxIDGetter(200))
 
 	searcher := NewSearcher(logger, store, createSchema().GetClass, nil, nil,
 		fakeStopwordDetector{}, 2, func() bool { return false }, "",
@@ -1215,7 +1237,14 @@ func createSchema() *schema.Schema {
 							IndexRangeFilters: &vFalse,
 						},
 						{
-							Name:              "inverted-without-frequency-roaringsetrange",
+							Name:              "inverted-roaringsetrange-on-disk",
+							DataType:          schema.DataTypeInt.PropString(),
+							IndexFilterable:   &vFalse,
+							IndexSearchable:   &vFalse,
+							IndexRangeFilters: &vTrue,
+						},
+						{
+							Name:              "inverted-roaringsetrange-in-memory",
 							DataType:          schema.DataTypeInt.PropString(),
 							IndexFilterable:   &vFalse,
 							IndexSearchable:   &vFalse,
