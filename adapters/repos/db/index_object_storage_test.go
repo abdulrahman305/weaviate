@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/weaviate/weaviate/cluster/router/types"
+
 	"github.com/go-openapi/strfmt"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
@@ -27,6 +29,7 @@ import (
 	"github.com/weaviate/weaviate/adapters/repos/db/helpers"
 	"github.com/weaviate/weaviate/adapters/repos/db/inverted"
 	"github.com/weaviate/weaviate/adapters/repos/db/queue"
+	"github.com/weaviate/weaviate/adapters/repos/db/roaringset"
 	"github.com/weaviate/weaviate/entities/models"
 	"github.com/weaviate/weaviate/entities/replication"
 	"github.com/weaviate/weaviate/entities/schema"
@@ -145,6 +148,9 @@ func TestIndex_ObjectStorageSize_Comprehensive(t *testing.T) {
 			mockSchema.EXPECT().ShardFromUUID("TestClass", mock.Anything).Return(tt.shardName).Maybe()
 			mockSchema.EXPECT().ShardOwner(tt.className, tt.shardName).Maybe().Return("test-node", nil)
 
+			mockRouter := types.NewMockRouter(t)
+			mockRouter.EXPECT().GetWriteReplicasLocation(tt.className, mock.Anything, tt.shardName).
+				Return(types.WriteReplicaSet{Replicas: []types.Replica{{NodeName: "test-node", ShardName: tt.shardName, HostAddr: "110.12.15.23"}}}, nil).Maybe()
 			// Create index
 			index, err := NewIndex(ctx, IndexConfig{
 				RootPath:              dirName,
@@ -155,7 +161,7 @@ func TestIndex_ObjectStorageSize_Comprehensive(t *testing.T) {
 			}, shardState, inverted.ConfigFromModel(class.InvertedIndexConfig),
 				enthnsw.UserConfig{
 					VectorCacheMaxObjects: 1000,
-				}, nil, nil, mockSchema, nil, logger, nil, nil, nil, &replication.GlobalConfig{}, nil, class, nil, scheduler, nil, nil, NewShardReindexerV3Noop())
+				}, nil, nil, mockSchema, nil, logger, nil, nil, nil, &replication.GlobalConfig{}, nil, class, nil, scheduler, nil, nil, NewShardReindexerV3Noop(), roaringset.NewBitmapBufPoolNoop())
 			require.NoError(t, err)
 			defer index.Shutdown(ctx)
 
@@ -192,7 +198,8 @@ func TestIndex_ObjectStorageSize_Comprehensive(t *testing.T) {
 				require.NotNil(t, shard)
 				defer release()
 
-				objectStorageSize := shard.ObjectStorageSize(ctx)
+				objectStorageSize, err := shard.ObjectStorageSize(ctx)
+				require.NoError(t, err)
 				objectCount := shard.ObjectCount()
 
 				// Verify object count
@@ -211,7 +218,8 @@ func TestIndex_ObjectStorageSize_Comprehensive(t *testing.T) {
 				require.NotNil(t, shard)
 				defer release()
 
-				objectStorageSize := shard.ObjectStorageSize(ctx)
+				objectStorageSize, err := shard.ObjectStorageSize(ctx)
+				require.NoError(t, err)
 				objectCount := shard.ObjectCount()
 
 				assert.Equal(t, tt.expectedObjectCount, objectCount, "Empty shard should have 0 objects")
@@ -289,6 +297,10 @@ func TestIndex_CalculateUnloadedObjectsMetrics_ActiveVsUnloaded(t *testing.T) {
 	mockSchema.EXPECT().ShardOwner(className, tenantName).Maybe().Return("test-node", nil)
 	mockSchema.EXPECT().TenantsShards(ctx, className, tenantName).Maybe().Return(map[string]string{tenantName: models.TenantActivityStatusHOT}, nil)
 
+	mockRouter := types.NewMockRouter(t)
+	mockRouter.EXPECT().GetWriteReplicasLocation(className, mock.Anything, tenantName).
+		Return(types.WriteReplicaSet{Replicas: []types.Replica{{NodeName: "test-node", ShardName: tenantName, HostAddr: "110.12.15.23"}}}, nil).Maybe()
+
 	// Create index with lazy loading disabled to test active calculation methods
 	index, err := NewIndex(ctx, IndexConfig{
 		RootPath:              dirName,
@@ -300,7 +312,7 @@ func TestIndex_CalculateUnloadedObjectsMetrics_ActiveVsUnloaded(t *testing.T) {
 	}, shardState, inverted.ConfigFromModel(class.InvertedIndexConfig),
 		enthnsw.UserConfig{
 			VectorCacheMaxObjects: 1000,
-		}, nil, nil, mockSchema, nil, logger, nil, nil, nil, &replication.GlobalConfig{}, nil, class, nil, scheduler, nil, nil, NewShardReindexerV3Noop())
+		}, nil, nil, mockSchema, nil, logger, nil, nil, nil, &replication.GlobalConfig{}, nil, class, nil, scheduler, nil, nil, NewShardReindexerV3Noop(), roaringset.NewBitmapBufPoolNoop())
 	require.NoError(t, err)
 
 	// Add properties
@@ -338,7 +350,8 @@ func TestIndex_CalculateUnloadedObjectsMetrics_ActiveVsUnloaded(t *testing.T) {
 	require.NotNil(t, objectsBucket)
 	require.NoError(t, objectsBucket.FlushMemtable())
 
-	activeObjectStorageSize := activeShard.ObjectStorageSize(ctx)
+	activeObjectStorageSize, err := activeShard.ObjectStorageSize(ctx)
+	require.NoError(t, err)
 	activeObjectCount := activeShard.ObjectCount()
 	assert.Greater(t, activeObjectStorageSize, int64(0), "Active shard calculation should have object storage size > 0")
 
@@ -376,7 +389,7 @@ func TestIndex_CalculateUnloadedObjectsMetrics_ActiveVsUnloaded(t *testing.T) {
 	}, shardState, inverted.ConfigFromModel(class.InvertedIndexConfig),
 		enthnsw.UserConfig{
 			VectorCacheMaxObjects: 1000,
-		}, index.GetVectorIndexConfigs(), nil, mockSchema, nil, logger, nil, nil, nil, &replication.GlobalConfig{}, nil, class, nil, scheduler, nil, nil, NewShardReindexerV3Noop())
+		}, index.GetVectorIndexConfigs(), nil, mockSchema, nil, logger, nil, nil, nil, &replication.GlobalConfig{}, nil, class, nil, scheduler, nil, nil, NewShardReindexerV3Noop(), roaringset.NewBitmapBufPoolNoop())
 	require.NoError(t, err)
 	defer newIndex.Shutdown(ctx)
 
@@ -386,11 +399,11 @@ func TestIndex_CalculateUnloadedObjectsMetrics_ActiveVsUnloaded(t *testing.T) {
 	}))
 	newIndex.shards.LoadAndDelete(tenantName)
 
-	inactiveObjectCount, inactiveObjectStorageSize := newIndex.CalculateUnloadedObjectsMetrics(ctx, tenantName)
-
+	inactiveObjectUsage, err := newIndex.CalculateUnloadedObjectsMetrics(ctx, tenantName)
+	require.NoError(t, err)
 	// Compare active and inactive metrics
-	assert.Equal(t, activeObjectCount, int(inactiveObjectCount), "Active and inactive object count should match")
-	assert.InDelta(t, activeObjectStorageSize, inactiveObjectStorageSize, 1024, "Active and inactive object storage size should be close")
+	assert.Equal(t, int64(activeObjectCount), inactiveObjectUsage.Count, "Active and inactive object count should match")
+	assert.InDelta(t, activeObjectStorageSize, inactiveObjectUsage.StorageBytes, 1024, "Active and inactive object storage size should be close")
 
 	// Verify all mock expectations were met
 	mockSchema.AssertExpectations(t)

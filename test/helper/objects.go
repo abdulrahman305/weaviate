@@ -526,11 +526,23 @@ func CreateAlias(t *testing.T, alias *models.Alias) {
 	CreateAliasWithAuthz(t, alias, nil)
 }
 
+func CreateAliasWithReturn(t *testing.T, alias *models.Alias) (*schema.AliasesCreateOK, error) {
+	t.Helper()
+	params := schema.NewAliasesCreateParams().WithBody(alias)
+	resp, err := Client(t).Schema.AliasesCreate(params, nil)
+	return resp, err
+}
+
 func CreateAliasWithAuthz(t *testing.T, alias *models.Alias, authInfo runtime.ClientAuthInfoWriter) {
 	t.Helper()
 	params := schema.NewAliasesCreateParams().WithBody(alias)
 	resp, err := Client(t).Schema.AliasesCreate(params, authInfo)
 	AssertRequestOk(t, resp, err, nil)
+}
+
+func CreateAliasAuth(t *testing.T, alias *models.Alias, key string) {
+	t.Helper()
+	CreateAliasWithAuthz(t, alias, CreateAuth(key))
 }
 
 func GetAliases(t *testing.T, className *string) *models.AliasResponse {
@@ -571,6 +583,13 @@ func GetAliasWithAuthzNotFound(t *testing.T, aliasName string, authInfo runtime.
 
 func UpdateAlias(t *testing.T, aliasName, targetClassName string) {
 	UpdateAliasWithAuthz(t, aliasName, targetClassName, nil)
+}
+
+func UpdateAliasWithReturn(t *testing.T, aliasName, targetClassName string) (*schema.AliasesUpdateOK, error) {
+	t.Helper()
+	params := schema.NewAliasesUpdateParams().WithAliasName(aliasName).WithBody(schema.AliasesUpdateBody{Class: targetClassName})
+	resp, err := Client(t).Schema.AliasesUpdate(params, nil)
+	return resp, err
 }
 
 func UpdateAliasWithAuthz(t *testing.T, aliasName, targetClassName string, authInfo runtime.ClientAuthInfoWriter) {
